@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
-const ANTHROPIC_API_KEY = "sk-ant-XXXXXXXXXXXXXXXX"; // <-- tu key aquí
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 const INFO_ENCINO = `
 INFORMACIÓN DE PRIVADA ENCINO — SOLO USA ESTO PARA RESPONDER
@@ -46,7 +46,7 @@ const SYSTEM_PROMPT = `Eres Daniel Soliz, dueño de Privada Encino en Montemorel
 
 ${INFO_ENCINO}
 
-HORARIO: Lunes a viernes 9am-9pm. Sábados y domingos respondes más lento porque estás en el terreno atendiendo visitas. Fuera de horario responde: "Gracias por escribir, con gusto le atiendo mañana. Quedamos en contacto."
+HORARIO: Lunes a viernes 9am-9pm. Sábados y domingos respondes más lento. Fuera de horario responde: "Gracias por escribir, con gusto le atiendo mañana. Quedamos en contacto."
 
 CÓMO ESCRIBIR:
 - Frases cortas, natural, sin comas de más
@@ -61,23 +61,19 @@ FLUJO DE CALIFICACIÓN — una pregunta por mensaje, solo las necesarias:
 3. ¿Está en etapa de cotizar o ya tiene algo más definido?
 4. ¿Le acomoda visitarnos este sábado o domingo?
 
-Si el cliente llega preguntando varias cosas a la vez — precios, ubicación, dimensiones — lee todo, responde lo más importante brevemente y haz una sola pregunta para calificar. No respondas punto por punto.
+Si el cliente llega preguntando varias cosas a la vez lee todo, responde lo más importante brevemente y haz una sola pregunta para calificar.
 
-REGLAS IMPORTANTES:
+REGLAS:
 - SOLO usa la info de arriba. Si no sabes algo: "Déjame verificarlo y le confirmo."
 - No mandes toda la info de golpe. Primero califica, luego informa.
 - Si preguntan si el precio es negociable: "Sí hay flexibilidad, eso lo platicamos en persona. ¿Le acomoda visitarnos este sábado o domingo?"
 - Si dice "lo voy a pensar": "Claro, tómese su tiempo. ¿Qué le genera duda, el precio o el plazo?"
 - El objetivo siempre es agendar una visita el fin de semana.
 
-ALERTAS — escribe exactamente esto al final del mensaje cuando aplique:
-- Cliente confirma visita sábado o domingo: ALERTA_VISITA_CONFIRMADA: [nombre/número] quiere visitar el [día]
-- Cliente quiere visitar otro día: ALERTA_VISITA_OTRO_DIA: [día que pidió]
-- Cliente mandó audio: ALERTA_AUDIO
-
-SEGUIMIENTO:
-- Sin respuesta 24hrs: "Buenos días, ¿pudo ver la información?"
-- Sin respuesta 3 días: "Hola, le escribo porque quedan pocos lotes, no quisiera que se quedara sin el suyo."`;
+ALERTAS al final del mensaje cuando aplique:
+- Cliente confirma visita sábado o domingo: ALERTA_VISITA_CONFIRMADA: [nombre] quiere visitar el [día]
+- Cliente quiere visitar otro día: ALERTA_VISITA_OTRO_DIA: [día]
+- Cliente mandó audio: ALERTA_AUDIO`;
 
 const conversaciones = {};
 
@@ -99,14 +95,6 @@ app.post("/webhook", async (req, res) => {
       conversaciones[telefono] = [];
     }
 
-    if (mensaje === "ALERTA_AUDIO") {
-      return res.json({ 
-        respuesta: null,
-        alerta: "ALERTA_AUDIO",
-        telefono 
-      });
-    }
-
     conversaciones[telefono].push({ role: "user", content: mensaje });
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -125,6 +113,12 @@ app.post("/webhook", async (req, res) => {
     });
 
     const data = await response.json();
+    
+    if (!data.content || !data.content[0] || !data.content[0].text) {
+      console.error("Error respuesta Claude:", JSON.stringify(data));
+      return res.json({ respuesta: "Un momento, déjame verificarlo." });
+    }
+
     let respuesta = data.content[0].text;
 
     conversaciones[telefono].push({ role: "assistant", content: respuesta });
@@ -143,7 +137,6 @@ app.post("/webhook", async (req, res) => {
     }
 
     const retardo = calcularRetardo(respuesta);
-
     await new Promise(resolve => setTimeout(resolve, retardo));
 
     res.json({ respuesta, alerta: alerta || null });

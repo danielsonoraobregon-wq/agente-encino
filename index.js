@@ -51,9 +51,9 @@ HORARIO: Lunes a viernes 9am-9pm. Sábados y domingos respondes más lento. Fuer
 CÓMO ESCRIBIR:
 - Frases cortas, natural, sin comas de más
 - Sin listas perfectas ni estructura robótica
-- Ocasionalmente manda dos mensajes cortos seguidos
 - Nunca empieces dos mensajes seguidos igual
 - Formal pero directo, estilo Monterrey
+- Máximo 3-4 líneas por mensaje
 
 FLUJO DE CALIFICACIÓN — una pregunta por mensaje, solo las necesarias:
 1. ¿Lo busca para construir, inversión o descanso?
@@ -67,8 +67,9 @@ REGLAS:
 - SOLO usa la info de arriba. Si no sabes algo: "Déjame verificarlo y le confirmo."
 - No mandes toda la info de golpe. Primero califica, luego informa.
 - Si preguntan si el precio es negociable: "Sí hay flexibilidad, eso lo platicamos en persona. ¿Le acomoda visitarnos este sábado o domingo?"
-- Si dice "lo voy a pensar": "Claro, tómese su tiempo. ¿Qué le genera duda, el precio o el plazo?"
+- Si dice lo voy a pensar: "Claro, tómese su tiempo. ¿Qué le genera duda, el precio o el plazo?"
 - El objetivo siempre es agendar una visita el fin de semana.
+- Primer saludo: "Buenos días, soy Daniel de Privada Encino. ¿En qué le puedo ayudar?"
 
 ALERTAS al final del mensaje cuando aplique:
 - Cliente confirma visita sábado o domingo: ALERTA_VISITA_CONFIRMADA: [nombre] quiere visitar el [día]
@@ -76,12 +77,6 @@ ALERTAS al final del mensaje cuando aplique:
 - Cliente mandó audio: ALERTA_AUDIO`;
 
 const conversaciones = {};
-
-function calcularRetardo(texto) {
-  const caracteres = texto.length;
-  const segundos = Math.min(Math.max(caracteres * 0.05, 5), 30);
-  return segundos * 1000;
-}
 
 app.post("/webhook", async (req, res) => {
   try {
@@ -113,9 +108,9 @@ app.post("/webhook", async (req, res) => {
     });
 
     const data = await response.json();
-    
+
     if (!data.content || !data.content[0] || !data.content[0].text) {
-      console.error("Error respuesta Claude:", JSON.stringify(data));
+      console.error("Error Claude:", JSON.stringify(data));
       return res.json({ respuesta: "Un momento, déjame verificarlo." });
     }
 
@@ -135,9 +130,6 @@ app.post("/webhook", async (req, res) => {
       alerta = respuesta.match(/ALERTA_VISITA_OTRO_DIA:.+/)?.[0];
       respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
     }
-
-    const retardo = calcularRetardo(respuesta);
-    await new Promise(resolve => setTimeout(resolve, retardo));
 
     res.json({ respuesta, alerta: alerta || null });
 

@@ -15,15 +15,15 @@ Proyecto campestre en Area de La Morita, Montemorelos, NL.
 Frente al Restaurant El Pariente. 5 min de Pueblo Salvaje, 3 min del Rio Blanquillo, 45 min de Monterrey.
 Maps: https://maps.app.goo.gl/y9ske7rVR2nBSS8s9
 
-Caracteristicas: unico proyecto pavimentado en la zona, acceso controlado, electricidad subterranea, red de agua, encinos centenarios y naranjos en produccion, libertad total de construccion. Quedan 4 lotes de 8 originales.
+Caracteristicas: unico proyecto pavimentado en la zona, acceso controlado, electricidad subterranea, red de agua, encinos y naranjos dentro de los lotes, libertad total de construccion. Quedan 4 lotes de 8 originales.
 
-Lotes:
+Lotes disponibles:
 - Lote 1: 1,648 m2 (38x38m) - $1,600,000 - 24 MSI
 - Lote 3: 1,639 m2 (43x38m) - $1,726,200 - 24 MSI
 - Lote 3B: 1,700 m2 (43x39m) - $1,785,000 - 24 MSI
-- Lote 4 PREMIUM: 1,632 m2 (45x38m) - $1,600,000 - Contado - mejor vista del proyecto
+- Lote 4 PREMIUM: 1,632 m2 (45x38m) - $1,600,000 - Contado - en colina con la mejor vista del proyecto
 
-Financiamiento directo sin banco: Enganche $350,000 + 24 mensualidades $75,000 + pago final $350,000. Sin intereses.
+Financiamiento directo sin banco: Enganche $350,000 mas 24 mensualidades de $75,000 mas pago final $350,000. Sin intereses. Se escuchan propuestas.
 Proceso: apartar, contrato notaria, escrituras listas.
 Visitas: sabados y domingos.
 `;
@@ -35,24 +35,33 @@ ${INFO_ENCINO}
 PERSONALIDAD:
 Profesional, directo y cordial. Estilo Monterrey. Mensajes cortos, maximo 3 lineas. Sin listas ni bullet points.
 
+REGLA ABSOLUTA - INFORMACION:
+SOLO usa la informacion que esta escrita arriba. NUNCA inventes cosas que no esten en el proyecto. No existen "areas comunes", no existen "instalaciones", no existen amenidades que no esten escritas arriba. Si el cliente pregunta algo que no esta en la informacion di exactamente: "Dejame verificarlo y le confirmo." y escribe ALERTA_NO_SABE al final.
+
 COMO RESPONDER:
 1. LEE el historial completo antes de responder. Nunca trates un mensaje como si fuera el primero si ya hay conversacion previa.
 2. RESPONDE siempre lo que pregunto el cliente aunque escriba mal. "ubaicon"=ubicacion, "financmiento"=financiamiento, "precios"=precios, "medidas"=dimensiones, "etc"=ignoralo.
-3. NUNCA digas "no entiendo" o "su mensaje no llego completo". Siempre responde algo util.
+3. NUNCA digas "no entiendo". Siempre responde algo util basado en lo que puedas entender.
 4. UNA sola pregunta por mensaje.
 5. Precios: siempre "desde $1,600,000".
+6. Cuando el cliente pide fotos o imagenes: "Con gusto, en un momento le comparto algunas fotos del proyecto." No inventes categorias de fotos.
+
+MENSAJES EN 2 PARTES:
+Cuando necesites dar informacion Y hacer una pregunta, separa con ---
+Ejemplo:
+Estamos en Montemorelos, 45 min de Monterrey. Aqui el mapa: https://maps.app.goo.gl/y9ske7rVR2nBSS8s9
+---
+Para que esta buscando el terreno, construccion, inversion o descanso?
 
 FLUJO:
 - Primer mensaje: saluda brevemente y pregunta para que busca el terreno.
-- Mensajes siguientes: continua la conversacion naturalmente sin resetear.
+- Mensajes siguientes: continua naturalmente sin resetear.
 - Si pregunta precio: "desde $1,600,000" y pregunta para que lo busca.
 - Si pregunta ubicacion: referencia breve mas link del mapa.
-- Si quiere visitar: di "Dejame verificar disponibilidad, en un momento le confirmo" y escribe ALERTA_VISITA_PENDIENTE:[detalle].
+- Si quiere visitar: "Dejame verificar disponibilidad, en un momento le confirmo" y escribe ALERTA_VISITA_PENDIENTE:[detalle].
 - Objetivo: agendar visita sabado o domingo.
 
 HORARIO: L-V 9am-9pm, S-D tambien. Fuera de horario: "Gracias por escribir, con gusto le atiendo manana."
-
-CUANDO NO SABES ALGO: "Dejame verificarlo y le confirmo." y escribe ALERTA_NO_SABE al final.
 
 SENALES - escribelas en linea separada al final, el cliente NUNCA las ve:
 FOTO_ENCINO: solo en el primer mensaje de la conversacion
@@ -135,16 +144,17 @@ app.post("/webhook", async (req, res) => {
 
     console.log("DATOS:", JSON.stringify({ telefono, mensaje, subscriber_id }));
 
-    if (!telefono || !mensaje) {
-      return res.status(400).json({ error: "Faltan datos" });
+    if (!mensaje) {
+      return res.status(400).json({ error: "Falta mensaje" });
     }
 
-    const clave = telefono || subscriber_id;
+    // Usar subscriber_id como clave principal — es consistente entre mensajes
+    const clave = subscriber_id || telefono || "desconocido";
 
     const esNuevo = !conversaciones[clave];
     if (esNuevo) {
       conversaciones[clave] = [];
-      await mandarEventoMeta("Lead", telefono || "desconocido");
+      await mandarEventoMeta("Lead", telefono || subscriber_id || "desconocido");
     }
 
     conversaciones[clave].push({ role: "user", content: mensaje });
@@ -193,7 +203,7 @@ app.post("/webhook", async (req, res) => {
       for (const e of etiquetasMatch) {
         const nombre = e.replace("ETIQUETA:", "");
         if (subscriber_id) await ponerEtiqueta(subscriber_id, nombre);
-        if (nombre === "calificado") await mandarEventoMeta("CompleteRegistration", telefono);
+        if (nombre === "calificado") await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
       }
       respuesta = respuesta.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
     }
@@ -202,26 +212,26 @@ app.post("/webhook", async (req, res) => {
       const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:(.+)/);
       alerta = "ALERTA_VISITA_PENDIENTE";
       respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
-      await mandarAlerta("Visita pendiente\nCliente: " + telefono + "\n" + (match ? match[1] : ""));
+      await mandarAlerta("Visita pendiente\nCliente: " + (telefono || subscriber_id) + "\n" + (match ? match[1] : ""));
     } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
       const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
       alerta = "ALERTA_VISITA_CONFIRMADA";
       respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:.+/g, "").trim();
       await mandarAlerta("Visita confirmada\n" + (match ? match[1] : telefono));
-      await mandarEventoMeta("Schedule", telefono);
+      await mandarEventoMeta("Schedule", telefono || subscriber_id);
     } else if (respuesta.includes("ALERTA_VISITA_OTRO_DIA")) {
       const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:(.+)/);
       alerta = "ALERTA_VISITA_OTRO_DIA";
       respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
-      await mandarAlerta("Visita otro dia\nCliente: " + telefono + "\nDia: " + (match ? match[1] : ""));
+      await mandarAlerta("Visita otro dia\nCliente: " + (telefono || subscriber_id) + "\nDia: " + (match ? match[1] : ""));
     } else if (respuesta.includes("ALERTA_AUDIO")) {
       alerta = "ALERTA_AUDIO";
       respuesta = respuesta.replace(/ALERTA_AUDIO/g, "").trim();
-      await mandarAlerta("Audio recibido\nCliente: " + telefono + "\nResponde tu");
+      await mandarAlerta("Audio recibido\nCliente: " + (telefono || subscriber_id) + "\nResponde tu");
     } else if (respuesta.includes("ALERTA_NO_SABE")) {
       alerta = "ALERTA_NO_SABE";
       respuesta = respuesta.replace(/ALERTA_NO_SABE/g, "").trim();
-      await mandarAlerta("No sabe responder\nCliente: " + telefono + "\nPregunta: " + mensaje);
+      await mandarAlerta("No sabe responder\nCliente: " + (telefono || subscriber_id) + "\nPregunta: " + mensaje);
     }
 
     const partes = respuesta.split("---");

@@ -3,17 +3,16 @@ const app = express();
 app.use(express.json());
 
 // ============================================================
-// VARIABLES DEL SERVIDOR — todas vienen de Railway
+// VARIABLES — todas vienen de Railway, nunca en el código
 // ============================================================
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const MANYCHAT_API_KEY = process.env.MANYCHAT_API_KEY;
 const META_DATASET_ID = process.env.META_DATASET_ID;
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
-const ALERTA_NUMERO = process.env.ALERTA_NUMERO; // 5218123793904
+const ALERTA_SUBSCRIBER_ID = process.env.ALERTA_SUBSCRIBER_ID; // 518309613
 
 // ============================================================
 // INFORMACIÓN DE PRIVADA ENCINO
-// Solo Claude puede ver esto — el cliente nunca lo ve
 // ============================================================
 const INFO_ENCINO = `
 PRIVADA ENCINO — INFORMACIÓN OFICIAL
@@ -32,7 +31,7 @@ Lotes disponibles:
 
 Financiamiento directo con propietarios, sin banco ni intermediarios.
 Enganche $350,000 + 24 mensualidades de $75,000 + pago final $350,000. Sin intereses.
-Se escuchan propuestas de pago a plazo corto.
+Se escuchan propuestas de pago.
 
 Proceso: apartar → contrato en notaría → escrituras listas.
 Visitas: sábados y domingos.
@@ -41,7 +40,7 @@ Visitas: sábados y domingos.
 // ============================================================
 // PROMPT — instrucciones para Daniel
 // ============================================================
-const SYSTEM_PROMPT = `Eres Daniel Soliz, asesor de ventas de Privada Encino en Montemorelos, NL. Respondes por WhatsApp como una persona real. Nunca menciones que eres IA ni que eres el dueño.
+const SYSTEM_PROMPT = `Eres Daniel Soliz, asesor de ventas de Privada Encino en Montemorelos, NL. Respondes por WhatsApp como una persona real desde el celular. Nunca menciones que eres IA ni que eres el dueño.
 
 ${INFO_ENCINO}
 
@@ -49,54 +48,62 @@ HORARIO: Lunes a viernes 9am-9pm. Sábados y domingos también. Fuera de horario
 
 TONO:
 - Profesional y cordial, estilo de negocios de Monterrey
-- Frases cortas y directas. Sin frases informales
-- Máximo 3-4 líneas por mensaje
+- Frases cortas y directas. Sin frases informales como "buena onda" o "te lo paso así de fácil"
 - Sin listas ni bullet points
 - Nunca empieces dos mensajes seguidos igual
 
-FLUJO DE CONVERSACIÓN:
-Primer contacto → escribe FOTO_ENCINO al final, luego saluda brevemente
-Después de saludar → pregunta para qué busca el terreno
-Sabe el propósito → pregunta plazo: ¿ya tiene algo definido o está cotizando?
-Plazo definido → menciona precio desde $1,600,000 e invita a visitar
-Listo para visitar → agenda sábado o domingo
+MENSAJES EN 2 PARTES:
+Cuando necesites dar información Y hacer una pregunta, separa los dos mensajes con ---
+El primer mensaje da la información. El segundo hace la pregunta.
+Ejemplo:
+Estamos en Área de La Morita, Montemorelos, frente al Restaurant El Pariente. Le dejo el mapa: https://maps.app.goo.gl/y9ske7rVR2nBSS8s9
+---
+¿Lo busca para construir, inversión o descanso?
 
-REGLA PRINCIPAL:
-Siempre responde primero lo que preguntó el cliente. Nunca ignores una pregunta. Luego haz UNA sola pregunta.
-Precios → di siempre "desde $1,600,000" no todos los precios juntos.
-Ubicación → referencia breve + link del mapa.
-Financiamiento → menciona opciones y que se platica en persona.
+REGLA DE ORO:
+Si el cliente pide varias cosas a la vez — responde solo lo más importante en el primer mensaje y haz una sola pregunta en el segundo. Nunca des precios, dimensiones y financiamiento en el mismo mensaje.
+
+FLUJO DE CONVERSACIÓN:
+1. Primer contacto → escribe FOTO_ENCINO al final, saluda brevemente
+2. Cliente pregunta info → responde lo más importante + pregunta para qué busca el terreno
+3. Sabe el propósito → pregunta plazo
+4. Dice que quiere verlo → responde: "Déjeme verificar disponibilidad y le confirmo." Escribe ALERTA_VISITA_PENDIENTE:[detalle]
+5. Cuando agenda visita confirmada → manda ubicación y cierra con nombre
+6. Pregunta el nombre cuando ya está casi cerrado
+
+DISPONIBILIDAD:
+NUNCA confirmes hora ni día de visita sin antes decir: "Déjeme verificar disponibilidad y le confirmo en un momento." Luego escribe la alerta y espera.
 
 CUANDO NO SABES ALGO:
-Responde: "Déjame verificarlo y le confirmo en un momento." y escribe al final: ALERTA_NO_SABE
+Di exactamente: "Déjame verificarlo y le confirmo en un momento." y escribe al final: ALERTA_NO_SABE
 
 REGLAS ADICIONALES:
-- Si preguntan si el precio es negociable: "Hay algo de flexibilidad, eso lo platicamos en persona. ¿Le acomoda visitarnos este fin de semana?"
-- Si dice "lo voy a pensar": "Claro. ¿Qué le genera duda, el precio o el plazo?"
-- Nunca mandes todos los precios, dimensiones y financiamiento en el mismo mensaje
+- Precio negociable: "Hay algo de flexibilidad, eso lo platicamos en persona. ¿Le acomoda visitarnos este fin de semana?"
+- "Lo voy a pensar": "Claro. ¿Qué le genera duda, el precio o el plazo?"
+- Precios → siempre "desde $1,600,000" no todos juntos
 - El objetivo siempre es agendar una visita el sábado o domingo
 
-ETIQUETAS — escribe al final cuando aplique:
+ETIQUETAS — en línea separada al final, el cliente nunca las ve:
 - Cliente llega por primera vez: ETIQUETA:nuevo-lead
 - Dice para qué busca: ETIQUETA:intencion-conocida
 - Tiene plazo definido: ETIQUETA:calificado
 - Confirma visita: ETIQUETA:visita-agendada
 
-ALERTAS — escribe al final cuando aplique:
+ALERTAS — en línea separada al final:
 - Primer mensaje: FOTO_ENCINO
-- Visita confirmada sábado o domingo: ALERTA_VISITA_CONFIRMADA:[nombre] el [día]
+- Quiere visitar, pendiente confirmar: ALERTA_VISITA_PENDIENTE:[nombre] [día] [hora]
+- Visita confirmada sábado o domingo: ALERTA_VISITA_CONFIRMADA:[nombre] el [día] a las [hora]
 - Quiere visitar otro día: ALERTA_VISITA_OTRO_DIA:[día]
 - Mandó audio: ALERTA_AUDIO
 - No sabe responder: ALERTA_NO_SABE`;
 
 // ============================================================
-// HISTORIAL DE CONVERSACIONES
-// Se guarda por número de teléfono en memoria
+// HISTORIAL DE CONVERSACIONES por teléfono
 // ============================================================
 const conversaciones = {};
 
 // ============================================================
-// FUNCIÓN: Mandar alerta a Daniel por WhatsApp via ManyChat
+// FUNCIÓN: Mandar alerta a Daniel por WhatsApp
 // ============================================================
 async function mandarAlerta(mensaje) {
   try {
@@ -107,14 +114,11 @@ async function mandarAlerta(mensaje) {
         "Authorization": `Bearer ${MANYCHAT_API_KEY}`
       },
       body: JSON.stringify({
-        subscriber_id: ALERTA_NUMERO,
+        subscriber_id: ALERTA_SUBSCRIBER_ID,
         data: {
           version: "v2",
           content: {
-            messages: [{
-              type: "text",
-              text: mensaje
-            }]
+            messages: [{ type: "text", text: mensaje }]
           }
         }
       })
@@ -158,9 +162,7 @@ async function mandarEventoMeta(evento, telefono) {
           event_name: evento,
           event_time: Math.floor(Date.now() / 1000),
           action_source: "other",
-          user_data: {
-            ph: [telefono]
-          }
+          user_data: { ph: [telefono] }
         }],
         access_token: META_ACCESS_TOKEN
       })
@@ -181,17 +183,16 @@ app.post("/webhook", async (req, res) => {
       return res.status(400).json({ error: "Faltan datos" });
     }
 
-    // Iniciar historial si es nuevo contacto
+    // Nuevo contacto — mandar evento Lead a Meta
     const esNuevo = !conversaciones[telefono];
     if (esNuevo) {
       conversaciones[telefono] = [];
-      // Mandar evento Lead a Meta CAPI
       await mandarEventoMeta("Lead", telefono);
     }
 
     conversaciones[telefono].push({ role: "user", content: mensaje });
 
-    // Llamar a Claude
+    // Llamar a Claude Sonnet
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -201,7 +202,7 @@ app.post("/webhook", async (req, res) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 400,
+        max_tokens: 500,
         system: SYSTEM_PROMPT,
         messages: conversaciones[telefono]
       })
@@ -211,62 +212,75 @@ app.post("/webhook", async (req, res) => {
 
     if (!data.content || !data.content[0] || !data.content[0].text) {
       console.error("Error Claude:", JSON.stringify(data));
-      return res.json({ respuesta: "Un momento, déjame verificarlo.", alerta: null, foto: false });
+      return res.json({ respuesta1: "Un momento, déjame verificarlo.", respuesta2: null, alerta: null, foto: false });
     }
 
     let respuesta = data.content[0].text;
 
     conversaciones[telefono].push({ role: "assistant", content: respuesta });
 
-    // Limitar historial a 20 mensajes
     if (conversaciones[telefono].length > 20) {
       conversaciones[telefono] = conversaciones[telefono].slice(-20);
     }
 
     // ============================================================
-    // PROCESAR SEÑALES — foto, alertas, etiquetas
+    // PROCESAR SEÑALES
     // ============================================================
     let alerta = null;
     let foto = false;
 
-    // Foto en primer mensaje
+    // Foto primer mensaje
     if (respuesta.includes("FOTO_ENCINO")) {
       foto = true;
       respuesta = respuesta.replace(/FOTO_ENCINO/g, "").trim();
     }
 
-    // Etiquetas automáticas
-    if (subscriber_id) {
-      const etiquetaMatch = respuesta.match(/ETIQUETA:([a-z-]+)/);
-      if (etiquetaMatch) {
-        await ponerEtiqueta(subscriber_id, etiquetaMatch[1]);
-        respuesta = respuesta.replace(/ETIQUETA:[a-z-]+/g, "").trim();
+    // Etiquetas — quitar del mensaje y aplicar en ManyChat
+    const etiquetasMatch = respuesta.match(/ETIQUETA:[a-zA-Z0-9_-]+/g);
+    if (etiquetasMatch) {
+      for (const etiqueta of etiquetasMatch) {
+        const nombre = etiqueta.replace("ETIQUETA:", "");
+        if (subscriber_id) await ponerEtiqueta(subscriber_id, nombre);
+        if (nombre === "calificado") await mandarEventoMeta("CompleteRegistration", telefono);
       }
+      respuesta = respuesta.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
     }
 
     // Alertas
-    if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
+    if (respuesta.includes("ALERTA_VISITA_PENDIENTE")) {
+      const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:(.+)/);
+      alerta = "ALERTA_VISITA_PENDIENTE";
+      respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
+      await mandarAlerta(`📅 VISITA PENDIENTE DE CONFIRMAR\nCliente: ${telefono}\nDetalle: ${match?.[1] || "sin detalle"}\n¿Confirmas disponibilidad?`);
+    } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
       const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
       alerta = "ALERTA_VISITA_CONFIRMADA";
       respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:.+/g, "").trim();
-      await mandarAlerta(`✅ VISITA CONFIRMADA\n${match?.[1] || telefono}\nResponde para coordinar detalles`);
+      await mandarAlerta(`✅ VISITA CONFIRMADA\n${match?.[1] || telefono}`);
       await mandarEventoMeta("Schedule", telefono);
     } else if (respuesta.includes("ALERTA_VISITA_OTRO_DIA")) {
       const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:(.+)/);
       alerta = "ALERTA_VISITA_OTRO_DIA";
       respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
-      await mandarAlerta(`📅 VISITA OTRO DÍA\nCliente: ${telefono}\nDía solicitado: ${match?.[1] || "no especificado"}\nConfirma disponibilidad`);
+      await mandarAlerta(`📅 VISITA OTRO DÍA\nCliente: ${telefono}\nDía: ${match?.[1] || "no especificado"}`);
     } else if (respuesta.includes("ALERTA_AUDIO")) {
       alerta = "ALERTA_AUDIO";
       respuesta = respuesta.replace(/ALERTA_AUDIO/g, "").trim();
-      await mandarAlerta(`🎤 AUDIO RECIBIDO\nCliente: ${telefono}\nNo puedo escuchar audios — responde tú`);
+      await mandarAlerta(`🎤 AUDIO RECIBIDO\nCliente: ${telefono}\nResponde tú manualmente`);
     } else if (respuesta.includes("ALERTA_NO_SABE")) {
       alerta = "ALERTA_NO_SABE";
       respuesta = respuesta.replace(/ALERTA_NO_SABE/g, "").trim();
-      await mandarAlerta(`❓ NO SABE RESPONDER\nCliente: ${telefono}\nPregunta: ${mensaje}\nEntra al chat y responde tú`);
+      await mandarAlerta(`❓ NO SABE RESPONDER\nCliente: ${telefono}\nPregunta: ${mensaje}`);
     }
 
-    res.json({ respuesta, alerta: alerta || null, foto });
+    // ============================================================
+    // DIVIDIR EN 2 MENSAJES si hay separador ---
+    // ============================================================
+    const partes = respuesta.split("---");
+    const respuesta1 = partes[0].trim();
+    const respuesta2 = partes[1]?.trim() || null;
+
+    res.json({ respuesta1, respuesta2, alerta: alerta || null, foto });
 
   } catch (error) {
     console.error("Error:", error);
@@ -275,7 +289,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ============================================================
-// REPORTE DIARIO — se activa manualmente con /reporte
+// REPORTE DIARIO — abre en navegador para recibir en WhatsApp
 // ============================================================
 app.get("/reporte", async (req, res) => {
   const total = Object.keys(conversaciones).length;
@@ -285,7 +299,7 @@ app.get("/reporte", async (req, res) => {
 });
 
 // ============================================================
-// RUTA DE VERIFICACIÓN
+// VERIFICACIÓN DEL SERVIDOR
 // ============================================================
 app.get("/", (req, res) => {
   res.json({ status: "Agente Daniel — Privada Encino funcionando" });

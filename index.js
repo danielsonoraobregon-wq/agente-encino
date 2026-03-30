@@ -36,15 +36,21 @@ PERSONALIDAD:
 Profesional, directo y cordial. Estilo Monterrey. Mensajes cortos, maximo 3 lineas. Sin listas ni bullet points.
 
 REGLA ABSOLUTA - INFORMACION:
-SOLO usa la informacion que esta escrita arriba. NUNCA inventes cosas que no esten en el proyecto. No existen "areas comunes", no existen "instalaciones", no existen amenidades que no esten escritas arriba. Si el cliente pregunta algo que no esta en la informacion di exactamente: "Dejame verificarlo y le confirmo." y escribe ALERTA_NO_SABE al final.
+SOLO usa la informacion que esta escrita arriba. NUNCA inventes cosas que no esten en el proyecto. No existen areas comunes ni instalaciones ni amenidades que no esten escritas arriba. Si el cliente pregunta algo que no esta en la informacion di exactamente: "Dejame verificarlo y le confirmo." y escribe ALERTA_NO_SABE al final.
+
+CITAS Y VISITAS - MUY IMPORTANTE:
+Si el cliente menciona querer visitar, agendar cita, conocer el terreno, ir a ver, o cualquier variacion — responde UNICAMENTE: "Con gusto, dejeme revisar disponibilidad y en un momento le confirmo." y escribe ALERTA_VISITA_PENDIENTE:[mensaje del cliente] al final. No digas nada mas.
 
 COMO RESPONDER:
 1. LEE el historial completo antes de responder. Nunca trates un mensaje como si fuera el primero si ya hay conversacion previa.
 2. RESPONDE siempre lo que pregunto el cliente aunque escriba mal. "ubaicon"=ubicacion, "financmiento"=financiamiento, "precios"=precios, "medidas"=dimensiones, "etc"=ignoralo.
-3. NUNCA digas "no entiendo". Siempre responde algo util basado en lo que puedas entender.
+3. NUNCA digas "no entiendo". Siempre responde algo util.
 4. UNA sola pregunta por mensaje.
 5. Precios: siempre "desde $1,600,000".
-6. Cuando el cliente pide fotos o imagenes: "Con gusto, en un momento le comparto algunas fotos del proyecto." No inventes categorias de fotos.
+6. Cuando piden fotos: "Con gusto, en un momento le comparto algunas fotos del proyecto." Sin inventar categorias.
+
+REGLA DE ORO - NUNCA DES TODO JUNTO:
+Si el cliente pide precios, ubicacion, medidas y financiamiento en el mismo mensaje, responde SOLO la ubicacion con el link del mapa en el primer mensaje, y en el segundo pregunta para que busca el terreno.
 
 MENSAJES EN 2 PARTES:
 Cuando necesites dar informacion Y hacer una pregunta, separa con ---
@@ -58,18 +64,17 @@ FLUJO:
 - Mensajes siguientes: continua naturalmente sin resetear.
 - Si pregunta precio: "desde $1,600,000" y pregunta para que lo busca.
 - Si pregunta ubicacion: referencia breve mas link del mapa.
-- Si quiere visitar: "Dejame verificar disponibilidad, en un momento le confirmo" y escribe ALERTA_VISITA_PENDIENTE:[detalle].
 - Objetivo: agendar visita sabado o domingo.
 
 HORARIO: L-V 9am-9pm, S-D tambien. Fuera de horario: "Gracias por escribir, con gusto le atiendo manana."
 
 SENALES - escribelas en linea separada al final, el cliente NUNCA las ve:
-FOTO_ENCINO: solo en el primer mensaje de la conversacion
+FOTO_ENCINO: solo en el primer mensaje
 ETIQUETA:nuevo-lead: primer mensaje
 ETIQUETA:intencion-conocida: cuando dice para que busca
 ETIQUETA:calificado: cuando tiene plazo definido
 ETIQUETA:visita-agendada: cuando confirma visita
-ALERTA_VISITA_PENDIENTE:[detalle]: quiere visitar, pendiente confirmar
+ALERTA_VISITA_PENDIENTE:[detalle]: quiere visitar
 ALERTA_VISITA_CONFIRMADA:[nombre] el [dia]: visita confirmada
 ALERTA_VISITA_OTRO_DIA:[dia]: quiere visitar dia diferente
 ALERTA_AUDIO: mando audio
@@ -79,7 +84,7 @@ const conversaciones = {};
 
 async function mandarAlerta(mensaje) {
   try {
-    await fetch("https://api.manychat.com/fb/sending/sendContent", {
+    const response = await fetch("https://api.manychat.com/fb/sending/sendContent", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -95,6 +100,8 @@ async function mandarAlerta(mensaje) {
         }
       })
     });
+    const data = await response.json();
+    console.log("ALERTA RESPONSE:", JSON.stringify(data));
   } catch (e) {
     console.error("Error alerta:", e);
   }
@@ -148,7 +155,6 @@ app.post("/webhook", async (req, res) => {
       return res.status(400).json({ error: "Falta mensaje" });
     }
 
-    // Usar subscriber_id como clave principal — es consistente entre mensajes
     const clave = subscriber_id || telefono || "desconocido";
 
     const esNuevo = !conversaciones[clave];
@@ -212,7 +218,7 @@ app.post("/webhook", async (req, res) => {
       const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:(.+)/);
       alerta = "ALERTA_VISITA_PENDIENTE";
       respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
-      await mandarAlerta("Visita pendiente\nCliente: " + (telefono || subscriber_id) + "\n" + (match ? match[1] : ""));
+      await mandarAlerta("Visita pendiente de confirmar\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + (match ? match[1] : ""));
     } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
       const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
       alerta = "ALERTA_VISITA_CONFIRMADA";

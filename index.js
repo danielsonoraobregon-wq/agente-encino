@@ -262,7 +262,11 @@ app.get("/reporte", async (req, res) => {
 app.get("/", (req, res) => {
   res.json({ status: "Agente Daniel - Privada Encino funcionando" });
 });
-
+app.get("/limpiar", (req, res) => {
+  const total = Object.keys(conversaciones).length;
+  Object.keys(conversaciones).forEach(k => delete conversaciones[k]);
+  res.json({ status: "Historial limpiado", conversaciones_borradas: total });
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, function() {
   console.log("Servidor corriendo en puerto " + PORT);

@@ -248,8 +248,8 @@ if (!data) continue;
 const seg = JSON.parse(data);
 // 48 horas sin respuesta — mandar alerta
 if (!seg.alertaEnviada && ahora - seg.timestamp > 172800000) {
-await mandarAlerta("Lead sin respuesta 48hrs\nSubscriber: " + seg.subscriberId seg.alertaEnviada = true;
-await redis.setex(clave, 604800, JSON.stringify(seg));
+await mandarAlerta("Lead sin respuesta 48hrs\nSubscriber: " + seg.subscriberId + "\nUltimo mensaje: " + seg.ultimoMensaje);
+seg.alertaEnviada = true;
 + "\nU
 }
 }

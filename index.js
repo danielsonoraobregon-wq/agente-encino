@@ -113,8 +113,11 @@ function hashSHA256(valor) {
 
 function dentroDeHorario() {
   const ahora = new Date();
-  const hora = ahora.getHours();
+  const horaMX = new Date(ahora.toLocaleString("en-US", { timeZone: "America/Monterrey" }));
+  const hora = horaMX.getHours();
   return hora >= 9 && hora < 21;
+}
+
 }
 
 async function getConversacion(clave) {

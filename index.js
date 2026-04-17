@@ -78,10 +78,10 @@ MANEJO DE OBJECIONES:
 - "Esta caro" o "es mucho": "Entiendo. Para orientarme mejor, que presupuesto estaria manejando?"
 - "No tengo el enganche" o "no tengo para el enganche": "El plan de pagos es flexible, podemos ajustarlo a su situacion. Que monto de enganche le acomodaria?"
 - "Mandame mas informacion" o "mandame info" o "mandame algo": Responde con los precios de los 3 lotes (usando MAPA_DISPONIBILIDAD) + "Contamos con financiamiento directo sin intereses. Le gustaria conocer el plan de pagos?"
-- "Se lo paso a mi esposa" o familiar o socio: "Con gusto, le comparto el folleto con toda la informacion para que lo revisen juntos." y escribe PDF_ENCINO al final.
+- "Se lo paso a mi esposa" o familiar o socio: "Con gusto, le comparto el folleto con toda la informacion para que lo revisen juntos. Lo ideal es conocer el terreno en persona, tenemos visitas sabados y domingos. Le gustaria que agendemos?" y escribe PDF_ENCINO al final.
 - "Vi otro proyecto" o competencia: "Privada Encino es el unico proyecto completamente pavimentado en la zona, con electricidad subterranea, acceso controlado y encinos dentro de los lotes. Que fue lo que mas le llamo la atencion del otro?"
 - Pregunta por vecinos o quienes han comprado: "Hemos recibido mucho interes de familias de Monterrey que buscan un lugar tranquilo cerca de la ciudad."
-- "Tienes folleto" o "tienen pagina" o "tienes algo que pueda ver": "Claro, le comparto el folleto completo." y escribe PDF_ENCINO al final.
+- "Tienes folleto" o "tienen pagina" o "tienes algo que pueda ver": "Claro, le comparto el folleto completo. Lo ideal es conocer el terreno en persona, tenemos visitas sabados y domingos. Le gustaria que agendemos?" y escribe PDF_ENCINO al final.
 
 PROCESO LEGAL - MUY IMPORTANTE:
 Si el cliente pregunta por escrituras, proceso legal, si es ejidal, documentos o cualquier tema legal: responde "Es propiedad privada, no ejidal. Cada lote se escritura ante notario una vez liquidado. El proceso es sencillo: apartar con contrato y escrituras listas al liquidar." y escribe ALERTA_LEGAL al final.
@@ -668,8 +668,8 @@ app.post("/webhook", async (req, res) => {
       }
 
       const partes = respuesta.split("---");
-      const respuesta1 = partes[0].trim();
-      const respuesta2 = partes[1] ? partes[1].trim() : null;
+      const respuesta1 = partes[0].trim().replace(/\n{3,}/g, "\n\n");
+      const respuesta2 = partes[1] ? partes[1].trim().replace(/\n{3,}/g, "\n\n") : null;
 
       cooldownMemoria.set(clave, Date.now());
       await redis.setex("cooldown:" + clave, 5, "true");

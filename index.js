@@ -288,7 +288,7 @@ async function alertaOwner(titulo, leadId, conversacion) {
     const ultimos = conversacion.slice(-6).map(m =>
       (m.role === "user" ? "Cliente: " : "Daniel: ") + m.content.slice(0, 150)
     ).join("\n");
-    const texto = `🔥 ${titulo}\n\nLead: ${leadId}\n\n${ultimos}`;
+    const texto = `🔥 LEAD CALIENTE - LLAMA HOY GOLÓN 🐔\n\nNombre/Teléfono: ${leadId}\n\nContexto:\n${ultimos}`;
     const res = await fetch("https://api.manychat.com/fb/sending/sendContent", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + MANYCHAT_API_KEY },

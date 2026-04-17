@@ -299,8 +299,7 @@ async function alertaOwner(titulo, leadId, conversacion) {
           content: {
             messages: [{ type: "text", text: texto }]
           }
-        },
-        message_tag: "ACCOUNT_UPDATE"
+        }
       })
     });
     const result = await res.json();

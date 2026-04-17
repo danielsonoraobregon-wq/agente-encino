@@ -280,6 +280,26 @@ async function mandarTelegram(mensaje) {
   }
 }
 
+const OWNER_SUBSCRIBER_ID = "187186203";
+
+async function alertaOwner(titulo, leadId, conversacion) {
+  try {
+    if (!MANYCHAT_API_KEY) return;
+    const ultimos = conversacion.slice(-6).map(m =>
+      (m.role === "user" ? "Cliente: " : "Daniel: ") + m.content.slice(0, 150)
+    ).join("\n");
+    const texto = `🔥 ${titulo}\n\nLead: ${leadId}\n\n${ultimos}`;
+    await fetch("https://api.manychat.com/fb/sending/sendText", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + MANYCHAT_API_KEY },
+      body: JSON.stringify({ subscriber_id: OWNER_SUBSCRIBER_ID, text: texto })
+    });
+    console.log("ALERTA OWNER enviada:", titulo);
+  } catch (e) {
+    console.error("Error alerta owner:", e.message);
+  }
+}
+
 async function ponerEtiqueta(subscriberId, etiqueta) {
   try {
     await fetch("https://api.manychat.com/fb/subscriber/addTag", {
@@ -617,6 +637,7 @@ app.post("/webhook", async (req, res) => {
         respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
         const detalle = match ? match[1] : "";
         await mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar");
+        await alertaOwner("🔥 LEAD QUIERE VISITAR — LLÁMALE", telefono || subscriber_id, conversacion);
         await guardarVisita(clave, detalle);
         await setBotCongelado(clave, true);
         await mandarEventoMeta("InitiateCheckout", telefono || subscriber_id);
@@ -654,6 +675,7 @@ app.post("/webhook", async (req, res) => {
         alerta = "ALERTA_PRESUPUESTO_OK";
         respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
+        await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", telefono || subscriber_id, conversacion);
 
       } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
         alerta = "ALERTA_PRESUPUESTO_BAJO";

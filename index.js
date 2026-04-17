@@ -637,7 +637,6 @@ app.post("/webhook", async (req, res) => {
         respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
         const detalle = match ? match[1] : "";
         await mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar");
-        await alertaOwner("🔥 LEAD QUIERE VISITAR — LLÁMALE", telefono || subscriber_id, conversacion);
         await guardarVisita(clave, detalle);
         await setBotCongelado(clave, true);
         await mandarEventoMeta("InitiateCheckout", telefono || subscriber_id);

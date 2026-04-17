@@ -686,6 +686,12 @@ app.post("/webhook", async (req, res) => {
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
         await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", telefono || subscriber_id, conversacion);
 
+      // Detección de presupuesto OK por keywords si Claude no escribió la señal
+      } else if (/\b(si\s+me\s+acomoda|si\s+me\s+alcanza|si\s+puedo|tengo\s+el\s+enganche|si\s+le\s+entr|cuadra\s+el\s+plan)\b/i.test(mensaje) && !alerta) {
+        alerta = "ALERTA_PRESUPUESTO_OK";
+        await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
+        await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", telefono || subscriber_id, conversacion);
+
       } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
         alerta = "ALERTA_PRESUPUESTO_BAJO";
         respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_BAJO/g, "").trim();

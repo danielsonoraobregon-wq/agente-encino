@@ -289,11 +289,22 @@ async function alertaOwner(titulo, leadId, conversacion) {
       (m.role === "user" ? "Cliente: " : "Daniel: ") + m.content.slice(0, 150)
     ).join("\n");
     const texto = `🔥 ${titulo}\n\nLead: ${leadId}\n\n${ultimos}`;
-    await fetch("https://api.manychat.com/fb/sending/sendText", {
+    const res = await fetch("https://api.manychat.com/fb/sending/sendContent", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + MANYCHAT_API_KEY },
-      body: JSON.stringify({ subscriber_id: OWNER_SUBSCRIBER_ID, text: texto })
+      body: JSON.stringify({
+        subscriber_id: OWNER_SUBSCRIBER_ID,
+        data: {
+          version: "v2",
+          content: {
+            messages: [{ type: "text", text: texto }]
+          }
+        },
+        message_tag: "ACCOUNT_UPDATE"
+      })
     });
+    const result = await res.json();
+    console.log("ALERTA OWNER RESPONSE:", JSON.stringify(result));
     console.log("ALERTA OWNER enviada:", titulo);
   } catch (e) {
     console.error("Error alerta owner:", e.message);

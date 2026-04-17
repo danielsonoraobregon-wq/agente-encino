@@ -26,6 +26,14 @@ const redis = new Redis({
 const procesando = new Set();
 const cooldownMemoria = new Map();
 
+// Limpiar cooldownMemoria cada hora para evitar memory leak
+setInterval(() => {
+  const hace5min = Date.now() - 300000;
+  for (const [clave, ts] of cooldownMemoria.entries()) {
+    if (ts < hace5min) cooldownMemoria.delete(clave);
+  }
+}, 3600000);
+
 const INFO_ENCINO = `
 PRIVADA ENCINO - INFORMACION OFICIAL
 
@@ -360,6 +368,10 @@ async function verificarSeguimientos() {
 
 async function reporteDiario() {
   try {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const yaEnviado = await redis.get("reporte_diario:" + hoy);
+    if (yaEnviado) return;
+    await redis.setex("reporte_diario:" + hoy, 86400, "true");
     const leads = await redis.keys("lead:*");
     const visitas = await redis.keys("visita:*");
     const fecha = new Date().toLocaleDateString("es-MX");
@@ -402,12 +414,26 @@ setInterval(() => {
   }
   // Reporte de citas los viernes a las 10am
   if (horaMX.getDay() === 5 && horaMX.getHours() === 10 && horaMX.getMinutes() < 5) {
-    reporteCitas();
+    const semana = new Date().toISOString().slice(0, 10);
+    redis.get("reporte_citas:" + semana).then(yaEnviado => {
+      if (!yaEnviado) {
+        redis.setex("reporte_citas:" + semana, 86400, "true");
+        reporteCitas();
+      }
+    });
   }
 }, 300000);
 
 app.post("/webhook", async (req, res) => {
   try {
+    const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+    if (WEBHOOK_SECRET) {
+      const token = req.headers["x-webhook-secret"] || req.body.secret;
+      if (token !== WEBHOOK_SECRET) {
+        return res.status(401).json({ error: "No autorizado" });
+      }
+    }
+
     const { telefono, mensaje, subscriber_id, primer_mensaje } = req.body;
     console.log("BODY COMPLETO:", JSON.stringify(req.body));
 
@@ -518,7 +544,7 @@ app.post("/webhook", async (req, res) => {
           "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-6",
           max_tokens: 500,
           system: SYSTEM_PROMPT,
           messages: conversacion

@@ -1,6 +1,13 @@
 const express = require("express");
 const app = express();
 app.use(express.json());
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
 
 const { Redis } = require("@upstash/redis");
 const crypto = require("crypto");
@@ -48,11 +55,11 @@ PROPIEDAD PRIVADA, NO EJIDAL. Cada lote se escritura ante notario una vez liquid
 Lotes disponibles (PRECIO DE LANZAMIENTO - ULTIMOS 3 LOTES):
 - Lote 1: 1,648 m2 (38x38m) - Precio original $2,000,000, hoy en $1,700,000 (ahorro $300,000) - 18 MSI
 - Lote 3B: 1,700 m2 (43x39m) - Precio original $2,100,000, hoy en $1,785,000 (ahorro $315,000) - 18 MSI
-- Lote 4 PREMIUM: 1,632 m2 (45x38m) - Precio original $2,075,000, hoy en $1,800,000 (ahorro $275,000) - 12 MSI - en colina con la mejor vista del proyecto
+- Lote 4 PREMIUM: 1,632 m2 (45x38m) - Precio original $2,075,000, hoy en $1,900,000 - 12 MSI - en colina con la mejor vista del proyecto
 
 Plan de pagos SUGERIDO (negociable segun situacion del cliente):
 - Lote 1 y 3B (18 MSI): Enganche $400,000 + 18 mensualidades iguales + pago final $400,000 al liquidar
-- Lote 4 PREMIUM (12 MSI): Enganche $400,000 + 12 mensualidades iguales
+- Lote 4 PREMIUM (12 MSI): Enganche $400,000 + 12 mensualidades de $91,666 + pago final $400,000
 - El enganche, mensualidades y plazos son negociables. Se escuchan propuestas.
 - Financiamiento directo sin banco, sin intereses.
 
@@ -75,7 +82,7 @@ Si el cliente menciona querer visitar, agendar cita, conocer el terreno, ir a ve
 
 MANEJO DE OBJECIONES:
 - "Esta muy lejos" o similar: "Estamos a solo 45 min de Monterrey por carretera, 5 min de Pueblo Salvaje y 3 min del Rio Blanquillo. La mayoria de nuestros clientes vienen de Monterrey."
-- "Esta caro" o "es mucho": "Entiendo. Para orientarme mejor, que presupuesto estaria manejando?"
+- "Esta caro" o "es mucho": "Entiendo. Para orientarme mejor, que monto de enganche estaria buscando?"
 - "No tengo el enganche" o "no tengo para el enganche": "El plan de pagos es flexible, podemos ajustarlo a su situacion. Que monto de enganche le acomodaria?"
 - "Mandame mas informacion" o "mandame info" o "mandame algo": Responde con los precios de los 3 lotes (usando MAPA_DISPONIBILIDAD) + "Contamos con financiamiento directo sin intereses. Le gustaria conocer el plan de pagos?"
 - "Se lo paso a mi esposa" o familiar o socio: "Con gusto, le comparto el folleto con toda la informacion para que lo revisen juntos. Lo ideal es conocer el terreno en persona, tenemos visitas sabados y domingos. Le gustaria que agendemos?" y escribe PDF_ENCINO al final.
@@ -87,48 +94,86 @@ PROCESO LEGAL - MUY IMPORTANTE:
 Si el cliente pregunta por escrituras, proceso legal, si es ejidal, documentos o cualquier tema legal: responde "Es propiedad privada, no ejidal. Cada lote se escritura ante notario una vez liquidado. El proceso es sencillo: apartar con contrato y escrituras listas al liquidar." y escribe ALERTA_LEGAL al final.
 
 UBICACION:
-Cuando el cliente pida ubicacion, SIEMPRE incluye el link de Google Maps y separa con --- la pregunta de seguimiento. Ejemplo:
-"Estamos en La Morita, Montemorelos, frente al Restaurant El Pariente. A 45 min de Monterrey, 5 min de Pueblo Salvaje y 3 min del Rio Blanquillo.
-Aqui le dejo la ubicacion: https://maps.app.goo.gl/y9ske7rVR2nBSS8s9
----
-Le gustaria conocer el plan de pagos?"
-NUNCA des la ubicacion sin el link.
+Cuando el cliente pida ubicacion, escribe MAPA_DISPONIBILIDAD y VIDEO_COLINA en lineas separadas antes del mensaje, luego responde con el link. Formato EXACTO:
+"Aqui le dejo la ubicacion: https://maps.app.goo.gl/y9ske7rVR2nBSS8s9
+PREGUNTA_PLAN_PAGOS"
+NUNCA juntes el link y la pregunta en el mismo mensaje. NUNCA agregues texto de "estamos en..." ni distancias. Solo el link, luego PREGUNTA_PLAN_PAGOS en linea separada. El sistema envia la pregunta automaticamente como mensaje aparte.
 
 PRECIOS - MUY IMPORTANTE:
-Cuando el cliente pida precios Y vas a listar los 3 lotes, escribe MAPA_DISPONIBILIDAD en linea separada ANTES de la lista. SOLO escribe MAPA_DISPONIBILIDAD cuando vayas a poner la lista de precios inmediatamente despues. NUNCA lo escribas en el primer mensaje de presentacion ni cuando no vas a listar precios.
+Cuando el cliente pida precios Y vas a listar los 3 lotes: escribe MAPA_DISPONIBILIDAD en linea separada ANTES de la lista de precios, y escribe VIDEO_COLINA en linea separada DESPUES de la lista de precios. El orden es: MAPA_DISPONIBILIDAD → lista de precios → VIDEO_COLINA. NUNCA los escribas en el primer mensaje de presentacion ni cuando no vas a listar precios.
 Formato de precios con ~ tachado y * negritas. SIEMPRE pon una linea en blanco entre cada lote:
 "Estos son los 3 lotes disponibles:
 
-Lote 1 - 1,648 m2, ~$2,000,000~ hoy en *$1,700,000*
+Lote 1 - 38x38m (1,648 m2), ~$2,000,000~ hoy en *$1,700,000*
 
-Lote 3B - 1,700 m2, ~$2,100,000~ hoy en *$1,785,000*
+Lote 3B - 43x39m (1,700 m2), ~$2,100,000~ hoy en *$1,785,000*
 
-Lote 4 Premium - 1,632 m2, ~$2,075,000~ hoy en *$1,800,000*
+Lote 4 Premium - 45x38m (1,632 m2), ~$2,075,000~ hoy en *$1,900,000*
 
-Contamos con financiamiento directo sin intereses."
-Despues de listar los precios, pregunta: "Le gustaria conocer el plan de pagos?" NUNCA preguntes "cual le llama la atencion" porque el cliente aun no ha visto los lotes fisicamente.
+Contamos con financiamiento directo sin intereses.
+PREGUNTA_PLAN_PAGOS"
+El sistema envia PREGUNTA_PLAN_PAGOS como mensaje separado. NUNCA juntes los precios y la pregunta. NUNCA preguntes "cual le llama la atencion" porque el cliente aun no ha visto los lotes fisicamente.
 NUNCA des un rango generico como "van desde $1.7M hasta $1.8M". SIEMPRE detalla cada lote.
 No preguntes directamente si busca para inversion — deja que el cliente lo mencione.
 
 LOTE 4 PREMIUM:
-Cuando el cliente pregunte especificamente por el Lote 4, la colina, la vista, o el lote premium, escribe VIDEO_COLINA en linea separada antes de responder sobre ese lote.
+Cuando el cliente pregunte especificamente por el Lote 4, la colina, la vista, o el lote premium (y NO sea en el contexto de mostrar todos los precios), escribe VIDEO_COLINA en linea separada antes de responder sobre ese lote.
 
 FINANCIAMIENTO (PLAN DE PAGOS) - DIFERENTE A PRECIOS:
-Financiamiento NO es lo mismo que precios. Financiamiento es COMO se paga. Cuando el cliente pregunte por financiamiento, plan de pagos, mensualidades, enganche o como se paga, responde con el plan de pagos:
+Financiamiento NO es lo mismo que precios. Financiamiento es COMO se paga. Cuando el cliente pregunte por financiamiento, plan de pagos, mensualidades, enganche o como se paga, responde con el plan de pagos SEPARADO de la pregunta con ---. Formato EXACTO obligatorio:
 "Manejamos financiamiento directo sin banco y sin intereses.
-Lotes 1 y 3B: Enganche $400,000 + 18 mensualidades desde $50,000 + pago final de $400,000
-Lote 4 Premium: Enganche $400,000 + 12 mensualidades desde $55,000
-El plan es flexible, podemos ajustarlo a su situacion."
-Despues de dar el financiamiento, pregunta: "Se le acomoda este plan?" para saber si esta dentro de su presupuesto.
+
+Lotes 1 y 3B: Enganche $400,000 + 18 mensualidades de $50,000 + pago final de $400,000
+
+Lote 4 Premium: Enganche $400,000 + 12 mensualidades de $91,666 + pago final $400,000
+
+El plan es flexible, podemos ajustarlo a su situacion.
+PREGUNTA_PLAN_PARECER"
+El sistema envia PREGUNTA_PLAN_PARECER como mensaje separado automaticamente.
 NUNCA respondas con precios cuando pregunten por financiamiento. Son cosas diferentes.
 
-ESCALAMIENTO - FLUJO NATURAL DE VENTA:
-Sigue este orden natural en la conversacion:
-1. Precios → termina con "Contamos con financiamiento sin intereses. Le gustaria conocer el plan de pagos?"
-2. Financiamiento → termina con "Se le acomoda este plan?"
-3. Presupuesto OK → manda PDF_ENCINO y responde: "Le comparto el folleto con todo el detalle. Lo ideal es conocer el terreno en persona, tenemos disponibilidad sabados y domingos. Le gustaria visitarnos?"
-4. Visita → ALERTA_VISITA_PENDIENTE
-Cada paso lleva al siguiente. NUNCA saltes pasos ni des todo junto.
+CALCULO DE PLAN PERSONALIZADO - MUY IMPORTANTE:
+Cuando el cliente pida un enganche diferente, mensualidad diferente, o quiera ajustar el plan, HAZ EL CALCULO tu mismo con esta formula:
+mensualidad = (precio_lote - enganche_cliente - pago_final) / numero_meses
+El pago final siempre es $400,000.
+
+Ejemplos (Lote 1, precio $1,700,000):
+- Enganche $300,000, 18 meses: ($1,700,000 - $300,000 - $400,000) / 18 = $55,555/mes
+- Enganche $500,000, 18 meses: ($1,700,000 - $500,000 - $400,000) / 18 = $44,444/mes
+- Enganche $600,000, 18 meses: ($1,700,000 - $600,000 - $400,000) / 18 = $38,888/mes
+
+Ejemplos (Lote 3B, precio $1,785,000):
+- Enganche $400,000, 18 meses: $54,722/mes
+- Enganche $500,000, 18 meses: $49,166/mes
+
+Ejemplos (Lote 4, precio $1,900,000):
+- Enganche $400,000, 12 meses: $91,666/mes
+- Enganche $500,000, 12 meses: $83,333/mes
+
+REGLAS DEL PLAN FLEXIBLE:
+- El plazo estandar es 18 meses (Lotes 1 y 3B) y 12 meses (Lote 4). NUNCA ofrezcas mas meses por iniciativa propia.
+- MAXIMO 24 meses. Si el CLIENTE menciona explicitamente querer mas de 18 meses o pide 24 meses, puedes calcularlo. Pero NUNCA lo sugieras tu.
+- Si el cliente pide MAS de 24 meses, responde cordialmente: "Con gusto lo revisamos, dejeme ver que podemos hacer y le confirmo."
+- Se puede agregar una anualidad (pago anual extra) para ajustar la mensualidad — calcula si el cliente lo pide.
+- Si el cliente pide un enganche muy bajo (menos de $200,000), responde cordialmente: "Dejeme revisar eso con el equipo y le confirmo si es posible."
+- Siempre redondea la mensualidad al numero entero mas cercano.
+- Muestra el calculo claro: "Con enganche de $X y 18 meses, su mensualidad seria de $Y + pago final de $400,000 al liquidar."
+
+ESCALAMIENTO - FLUJO ESTRICTO DE VENTA (NO SALTES PASOS):
+El flujo tiene 4 pasos. Cada "Si" avanza exactamente UN paso.
+1. PRECIOS → el cliente pregunta precios → muestras los 3 lotes → escribe PREGUNTA_PLAN_PAGOS al final (obligatorio siempre)
+2. FINANCIAMIENTO → el cliente dice "Si" a conocer plan de pagos → muestras el plan → escribe PREGUNTA_PLAN_PARECER al final (obligatorio siempre)
+3. PRESUPUESTO OK → el cliente confirma que el plan de pagos le acomoda → ENTONCES y SOLO ENTONCES manda PDF_ENCINO y escribe ALERTA_PRESUPUESTO_OK → responde con PREGUNTA_VISITA al final:
+"Le comparto el folleto con todo el detalle. Lo ideal es conocer el terreno en persona, tenemos disponibilidad sabados y domingos.
+PREGUNTA_VISITA"
+El sistema envia PREGUNTA_VISITA como mensaje separado automaticamente.
+4. VISITA → ALERTA_VISITA_PENDIENTE
+
+REGLA CRITICA SOBRE "Si":
+- "Si" respondiendo a "¿Le gustaria conocer los precios?" → muestra los precios. NO mandes PDF. NO escribas ALERTA_PRESUPUESTO_OK.
+- "Si" respondiendo a "¿Le gustaria conocer el plan de pagos?" → muestra el financiamiento. NO mandes PDF. NO escribas ALERTA_PRESUPUESTO_OK.
+- "Si" respondiendo a "¿Que le parece el plan de pagos?" → AHORA SI manda PDF_ENCINO y escribe ALERTA_PRESUPUESTO_OK.
+NUNCA mandes PDF_ENCINO en el paso 1 ni en el paso 2. Solo en el paso 3.
 
 REGLA CRITICA - NO ALUCINAR INFORMACION ENVIADA:
 La informacion de arriba (precios, lotes, ubicacion) es TU conocimiento interno. El cliente NO la ha visto a menos que TU la hayas escrito en un mensaje anterior en esta conversacion. NUNCA digas "ya se los mande", "como le mencione", "arriba le puse" ni nada similar a menos que puedas ver que TU realmente escribiste esa informacion en tus mensajes anteriores del historial. Si el cliente pide algo que no le has dado, DASELO aunque tu ya lo "sepas".
@@ -144,29 +189,43 @@ COMO RESPONDER:
 REGLA DE ORO - NO SATURES PERO RESPONDE LO QUE PIDEN:
 Si el cliente pide 1 cosa, responde esa cosa.
 Si el cliente pide 2 cosas (ej: "ubicacion y precios"), responde AMBAS pero separadas con --- para que lleguen como mensajes diferentes.
-Si el cliente pide 3 o mas cosas a la vez, responde las 2 mas importantes separadas con --- y pregunta por el resto.
+Si el cliente dice "todos", "todo", "todos porfavor", "todo porfavor" en respuesta a una pregunta sobre precios/ubicacion/plan de pagos: responde con MAPA_DISPONIBILIDAD + lista de precios como parte 1, luego UN SOLO --- separador, luego la ubicacion con el link de maps Y al final de ese mismo mensaje escribe "Le gustaria conocer el plan de pagos?" — todo en la parte 2, sin otro ---. MAXIMO un --- en total.
+Si el cliente pide 3 o mas cosas a la vez, responde precios y ubicacion separados con --- y termina con "Le gustaria conocer el plan de pagos?".
 NUNCA ignores algo que el cliente pidio explicitamente.
 
-MENSAJES EN 2 PARTES:
-Usa --- SOLO cuando des un bloque grande de informacion (precios, ubicacion, financiamiento) Y ademas quieras hacer una pregunta. Para respuestas cortas conversacionales NUNCA uses ---. Ejemplo CORRECTO sin separar: "Claro, con gusto le escribo la proxima semana. Que dia le vendria mejor?"
+MENSAJES EN 2 PARTES - REGLA ESTRICTA:
+Usa --- MAXIMO UNA VEZ por respuesta. Divide en exactamente 2 partes: parte 1 = informacion, parte 2 = informacion + pregunta de cierre. NUNCA uses --- dos veces en la misma respuesta. Si tienes 3 bloques, incluye la pregunta al final de la segunda parte, no como tercer bloque separado.
+Para respuestas cortas conversacionales NUNCA uses ---. Ejemplo CORRECTO sin separar: "Claro, con gusto le escribo la proxima semana. Que dia le vendria mejor?"
 
-FLUJO:
-- Si el historial esta vacio y el cliente solo dice "hola" o saludo sin pedir nada: responde UNICAMENTE "Hola, soy Daniel Soliz. ¿En qué le puedo ayudar?" — nada mas, no agregues nada extra.
-- Si el historial esta vacio y el cliente PIDE ALGO CONCRETO (precios, ubicacion, financiamiento, informes): di "Hola, soy Daniel Soliz, con gusto." en UNA linea y luego responde DIRECTAMENTE con lo que pidio. NUNCA preguntes "que busca" si ya te dijo que busca.
-- Si YA HAY mensajes previos en el historial: NUNCA te presentes de nuevo, NUNCA digas "Hola soy Daniel Soliz" otra vez. Continua la conversacion naturalmente respondiendo lo que el cliente pidio.
+FLUJO - SALUDO INICIAL:
+- Si el historial esta vacio y el cliente solo dice "hola", "buenas", "buen dia" o cualquier saludo SIN pedir nada concreto: responde en DOS partes separadas con ---:
+  Parte 1: "Hola, soy Daniel Soliz, le estaré compartiendo la información de Privada Encino."
+  Parte 2: "¿Qué información buscaba sobre el proyecto?"
+  Nada mas. CERO datos del proyecto en este mensaje.
+
+- Si el historial esta vacio y el cliente PIDE ALGO CONCRETO (precios, ubicacion, financiamiento, informes): di "Hola, soy Daniel Soliz, con gusto." en UNA linea, luego --- separador, luego responde DIRECTAMENTE lo que pidio. NUNCA preguntes "que busca" si ya te dijo que busca.
+
+- Si YA HAY mensajes previos en el historial: NUNCA te presentes de nuevo, NUNCA digas "Hola soy Daniel Soliz" otra vez. Continua la conversacion naturalmente.
 - Objetivo: agendar visita sabado o domingo.
+
+ANTI-REPETICION:
+Antes de cerrar tu mensaje con una pregunta, lee el mensaje ANTERIOR que TU mandaste. Si ya terminaste ese mensaje con la misma pregunta, NO la repitas. Responde lo que el cliente pidio y avanza en el flujo con la pregunta del siguiente paso.
 
 HORARIO: L-V 9am-9pm, S-D tambien. Fuera de horario: "Gracias por escribir, con gusto le atiendo manana a primera hora."
 
 PRESUPUESTO:
-Cuando el cliente confirme que el financiamiento le funciona, que si esta dentro de su presupuesto, que si le alcanza, o cualquier respuesta positiva sobre los precios o el plan de pagos: manda PDF_ENCINO y responde "Le comparto el folleto con todo el detalle. Lo ideal es conocer el terreno en persona, tenemos disponibilidad sabados y domingos. Le gustaria visitarnos?" y escribe ALERTA_PRESUPUESTO_OK al final.
+SOLO cuando el cliente confirme que el PLAN DE PAGOS le funciona (despues de que TU ya mostraste el plan de pagos en la conversacion): manda PDF_ENCINO y escribe ALERTA_PRESUPUESTO_OK, y responde con formato EXACTO:
+"Le comparto el folleto con todo el detalle. Lo ideal es conocer el terreno en persona, tenemos disponibilidad sabados y domingos.
+PREGUNTA_VISITA"
+El sistema envia PREGUNTA_VISITA como mensaje separado automaticamente.
+IMPORTANTE: Si el cliente dice "Si" y TU ultimo mensaje fue mostrar PRECIOS (no el plan de pagos), eso significa que quiere conocer el plan de pagos — muestra el financiamiento, NO mandes PDF.
 Si el cliente dice que su presupuesto es menor a $1,000,000 o que no le alcanza, responde amablemente: "Entiendo, por el momento los lotes estan en ese rango de precio. Si mas adelante ajusta su presupuesto con gusto le atendemos." y escribe ALERTA_PRESUPUESTO_BAJO al final.
 
 SEGUIMIENTO:
 Si el cliente dice que quiere que le escribas despues, la proxima semana, mas adelante, o pide que lo contactes en otro momento, preguntale que dia le viene bien y escribe ALERTA_SEGUIMIENTO:[detalle] al final.
 
-SENALES - escribelas en linea separada al final, el cliente NUNCA las ve:
-PDF_ENCINO: cuando el cliente confirma presupuesto OK, pide info para compartir con alguien, dice "mandame info/folleto/algo", o pide material para revisar.
+SENALES - escribelas en linea separada, el cliente NUNCA las ve:
+PDF_ENCINO: SOLO en estos casos exactos: (1) cliente confirma que el plan de pagos le acomoda (presupuesto OK), (2) pide info para compartir con esposa/familiar/socio, (3) dice "mandame el folleto" o "tienes folleto" o "tienen pagina" explicitamente. NUNCA por un "Si" o "todo" generico.
 ALERTA_VISITA_PENDIENTE:[detalle]: quiere visitar
 ALERTA_VISITA_CONFIRMADA:[nombre] el [dia]: visita confirmada
 ALERTA_VISITA_OTRO_DIA:[dia]: quiere visitar dia diferente
@@ -177,7 +236,10 @@ ALERTA_PRESUPUESTO_OK: cliente confirma que el financiamiento/precio le funciona
 ALERTA_PRESUPUESTO_BAJO: cliente dice que no le alcanza o su presupuesto es muy bajo
 ALERTA_SEGUIMIENTO:[detalle]: cliente pide que lo contactes despues
 MAPA_DISPONIBILIDAD: antes de mostrar precios, para que el cliente vea el mapa de lotes
-VIDEO_COLINA: cuando preguntan por el Lote 4 Premium o la colina`;
+VIDEO_COLINA: cuando preguntan por el Lote 4 Premium o la colina
+PREGUNTA_PLAN_PAGOS: al final de ubicacion y precios — el sistema envia "¿Le gustaria conocer el plan de pagos?" como mensaje separado
+PREGUNTA_PLAN_PARECER: al final del plan de financiamiento — el sistema envia "¿Que le parece el plan de pagos?" como mensaje separado
+PREGUNTA_VISITA: al final de presupuesto OK — el sistema envia "¿Le gustaria visitarnos?" como mensaje separado`;
 
 function hashSHA256(valor) {
   if (!valor) return null;
@@ -185,10 +247,7 @@ function hashSHA256(valor) {
 }
 
 function dentroDeHorario() {
-  const ahora = new Date();
-  const horaMX = new Date(ahora.toLocaleString("en-US", { timeZone: "America/Monterrey" }));
-  const hora = horaMX.getHours();
-  return hora >= 9 && hora < 21;
+  return true; // 24h para pruebas
 }
 
 async function getConversacion(clave) {
@@ -210,7 +269,7 @@ async function getConversacion(clave) {
 async function setConversacion(clave, mensajes) {
   try {
     const key = "conv:" + clave;
-    await redis.setex(key, 86400, JSON.stringify(mensajes));
+    await redis.setex(key, 2592000, JSON.stringify(mensajes));
     
     // Verificar que se guardo
     const check = await redis.get(key);
@@ -236,7 +295,7 @@ async function getBotCongelado(clave) {
 async function setBotCongelado(clave, valor) {
   try {
     if (valor) {
-      await redis.setex("congelado:" + clave, 86400, "true");
+      await redis.setex("congelado:" + clave, 2592000, "true");
     } else {
       await redis.del("congelado:" + clave);
     }
@@ -470,8 +529,14 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    const { telefono, mensaje, subscriber_id, primer_mensaje } = req.body;
+    const { telefono: telefonoRaw, mensaje, subscriber_id, primer_mensaje, nombre } = req.body;
     console.log("BODY COMPLETO:", JSON.stringify(req.body));
+
+    // Sanitizar teléfono — ignorar si ManyChat manda variable sin resolver
+    const telefono = (telefonoRaw && !telefonoRaw.includes("{{")) ? telefonoRaw : null;
+    const clienteLabel = nombre
+      ? `${nombre}${telefono ? " / " + telefono : ""}${!telefono ? " / sub:" + subscriber_id : ""}`
+      : (telefono || "sub:" + subscriber_id);
 
     if (!mensaje) return res.status(400).json({ error: "Falta mensaje" });
 
@@ -521,7 +586,7 @@ app.post("/webhook", async (req, res) => {
       if (esNuevo) {
         await mandarEventoMeta("Lead", telefono || subscriber_id || "desconocido");
         await redis.setex("seguimiento:" + clave, 604800, JSON.stringify({
-          subscriberId: subscriber_id, timestamp: Date.now(), ultimoMensaje: mensaje, alertaEnviada: false
+          subscriberId: subscriber_id, nombre: nombre || null, telefono: telefono || null, timestamp: Date.now(), ultimoMensaje: mensaje, alertaEnviada: false
         }));
         await redis.setex("frio:" + clave, 1209600, JSON.stringify({
           subscriberId: subscriber_id, timestamp: Date.now(), alertaEnviada: false
@@ -541,6 +606,8 @@ app.post("/webhook", async (req, res) => {
           seg.ultimoMensaje = mensaje;
           seg.timestamp = Date.now();
           seg.alertaEnviada = false;
+          if (nombre) seg.nombre = nombre;
+          if (telefono) seg.telefono = telefono;
           await redis.setex("seguimiento:" + clave, 604800, JSON.stringify(seg));
         }
       }
@@ -580,8 +647,8 @@ app.post("/webhook", async (req, res) => {
           "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: "claude-opus-4-7",
-          max_tokens: 500,
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
           system: SYSTEM_PROMPT,
           messages: conversacion
         })
@@ -629,8 +696,11 @@ app.post("/webhook", async (req, res) => {
       if (respuesta.includes("VIDEO_COLINA")) {
         respuesta = respuesta.replace(/VIDEO_COLINA/g, "").trim();
         if (subscriber_id) {
-          await mandarContenido(subscriber_id, CONTENT_LOTE_PREMIUM);
-          console.log("VIDEO COLINA enviado a:", subscriber_id);
+          // Delay para que llegue DESPUÉS del texto de precios
+          setTimeout(() => {
+            mandarContenido(subscriber_id, CONTENT_LOTE_PREMIUM);
+            console.log("VIDEO COLINA enviado a:", subscriber_id);
+          }, 4000);
         }
       }
 
@@ -648,7 +718,7 @@ app.post("/webhook", async (req, res) => {
         alerta = "ALERTA_VISITA_PENDIENTE";
         respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
         const detalle = match ? match[1] : "";
-        await mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar");
+        await mandarTelegram("VISITA PENDIENTE\nCliente: " + clienteLabel + "\nDetalle: " + detalle + "\nResponde TU para confirmar");
         await guardarVisita(clave, detalle);
         await setBotCongelado(clave, true);
         await mandarEventoMeta("InitiateCheckout", telefono || subscriber_id);
@@ -658,7 +728,7 @@ app.post("/webhook", async (req, res) => {
         const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
         alerta = "ALERTA_VISITA_CONFIRMADA";
         respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:.+/g, "").trim();
-        await mandarTelegram("VISITA CONFIRMADA\n" + (match ? match[1] : telefono));
+        await mandarTelegram("VISITA CONFIRMADA\nCliente: " + clienteLabel + "\n" + (match ? match[1] : ""));
         await mandarEventoMeta("Schedule", telefono || subscriber_id);
         if (subscriber_id) await ponerEtiqueta(subscriber_id, "cita privada encino");
 
@@ -666,7 +736,7 @@ app.post("/webhook", async (req, res) => {
         const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:(.+)/);
         alerta = "ALERTA_VISITA_OTRO_DIA";
         respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
-        await mandarTelegram("Visita otro dia\nCliente: " + (telefono || subscriber_id) + "\nDia: " + (match ? match[1] : ""));
+        await mandarTelegram("Visita otro dia\nCliente: " + clienteLabel + "\nDia: " + (match ? match[1] : ""));
 
       } else if (respuesta.includes("ALERTA_AUDIO")) {
         alerta = "ALERTA_AUDIO";
@@ -680,19 +750,19 @@ app.post("/webhook", async (req, res) => {
       } else if (respuesta.includes("ALERTA_NO_SABE")) {
         alerta = "ALERTA_NO_SABE";
         respuesta = respuesta.replace(/ALERTA_NO_SABE/g, "").trim();
-        await mandarTelegram("No sabe responder\nCliente: " + (telefono || subscriber_id) + "\nPregunta: " + mensaje);
+        await mandarTelegram("No sabe responder\nCliente: " + clienteLabel + "\nPregunta: " + mensaje);
 
       } else if (respuesta.includes("ALERTA_PRESUPUESTO_OK")) {
         alerta = "ALERTA_PRESUPUESTO_OK";
         respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
-        await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", telefono || subscriber_id, conversacion);
+        await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", clienteLabel, conversacion);
 
       // Detección de presupuesto OK por keywords si Claude no escribió la señal
       } else if (/\b(si\s+me\s+acomoda|si\s+me\s+alcanza|si\s+puedo|tengo\s+el\s+enganche|si\s+le\s+entr|cuadra\s+el\s+plan)\b/i.test(mensaje) && !alerta) {
         alerta = "ALERTA_PRESUPUESTO_OK";
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
-        await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", telefono || subscriber_id, conversacion);
+        await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", clienteLabel, conversacion);
 
       } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
         alerta = "ALERTA_PRESUPUESTO_BAJO";
@@ -703,16 +773,89 @@ app.post("/webhook", async (req, res) => {
         alerta = "ALERTA_SEGUIMIENTO";
         respuesta = respuesta.replace(/ALERTA_SEGUIMIENTO:.+/g, "").trim();
         const detalle = match ? match[1] : "";
-        await mandarTelegram("SEGUIMIENTO\nCliente: " + (telefono || subscriber_id) + "\nPide contacto: " + detalle);
+        await mandarTelegram("SEGUIMIENTO\nCliente: " + clienteLabel + "\nPide contacto: " + detalle);
       }
 
       if (respuesta.includes("ALERTA_PDF_ENVIADO")) {
         respuesta = respuesta.replace(/ALERTA_PDF_ENVIADO/g, "").trim();
       }
 
+      // Señales de pregunta → inyectar --- + pregunta para split garantizado
+      if (respuesta.includes("PREGUNTA_PLAN_PAGOS")) {
+        respuesta = respuesta.replace(/\s*PREGUNTA_PLAN_PAGOS/g, "\n---\n\xBFLe gustar\xEDa conocer el plan de pagos?");
+        console.log("SIGNAL PREGUNTA_PLAN_PAGOS aplicado");
+      }
+      if (respuesta.includes("PREGUNTA_PLAN_PARECER")) {
+        respuesta = respuesta.replace(/\s*PREGUNTA_PLAN_PARECER/g, "\n---\n\xBFQu\xE9 le parece el plan de pagos?");
+        console.log("SIGNAL PREGUNTA_PLAN_PARECER aplicado");
+        await mandarEventoMeta("AddToCart", telefono || subscriber_id);
+      }
+      if (respuesta.includes("PREGUNTA_VISITA")) {
+        respuesta = respuesta.replace(/\s*PREGUNTA_VISITA/g, "\n---\n\xBFLe gustar\xEDa visitarnos?");
+        console.log("SIGNAL PREGUNTA_VISITA aplicado");
+      }
+
+      // Fallback: si Claude listó los 3 lotes pero olvidó PREGUNTA_PLAN_PAGOS
+      if (!respuesta.includes("---") && respuesta.includes("Lote 1") && respuesta.includes("Lote 3B") && respuesta.includes("Lote 4")) {
+        respuesta = respuesta.trimEnd() + "\n---\n\xBFLe gustar\xEDa conocer el plan de pagos?";
+        console.log("FALLBACK precios: pregunta plan pagos inyectada");
+      }
+
+      // Forzar split en preguntas de cierre si Claude no puso ---
+      if (!respuesta.includes("---")) {
+        const preguntasCierre = [
+          "Le gustaria conocer el plan de pagos?",
+          "Le gustaría conocer el plan de pagos?",
+          "¿Le gustaria conocer el plan de pagos?",
+          "¿Le gustaría conocer el plan de pagos?",
+          "Que le parece el plan de pagos?",
+          "¿Que le parece el plan de pagos?",
+          "Qué le parece el plan de pagos?",
+          "¿Qué le parece el plan de pagos?",
+          "Que le parece el plan de pagos?",
+          "¿Que le parece el plan de pagos?",
+          "Le gustaria visitarnos?",
+          "Le gustaría visitarnos?",
+          "¿Le gustaria visitarnos?",
+          "¿Le gustaría visitarnos?",
+          "Le gustaria que agendemos?",
+          "¿Le gustaria que agendemos?",
+        ];
+        for (const pregunta of preguntasCierre) {
+          const idx = respuesta.indexOf(pregunta);
+          if (idx !== -1) {
+            const antes = respuesta.slice(0, idx).trimEnd();
+            const despues = respuesta.slice(idx);
+            respuesta = antes + "\n---\n" + despues;
+            console.log("AUTO-SPLIT aplicado en:", pregunta);
+            break;
+          }
+        }
+      }
+
       const partes = respuesta.split("---");
       const respuesta1 = partes[0].trim().replace(/\n{3,}/g, "\n\n");
       const respuesta2 = partes[1] ? partes[1].trim().replace(/\n{3,}/g, "\n\n") : null;
+
+      // Mandar respuesta2 directamente via ManyChat API con delay (no depender de ManyChat flow)
+      if (respuesta2 && subscriber_id && MANYCHAT_API_KEY) {
+        setTimeout(async () => {
+          try {
+            const r = await fetch("https://api.manychat.com/fb/sending/sendContent", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + MANYCHAT_API_KEY },
+              body: JSON.stringify({
+                subscriber_id: subscriber_id,
+                data: { version: "v2", content: { messages: [{ type: "text", text: respuesta2 }] } }
+              })
+            });
+            const d = await r.json();
+            console.log("RESPUESTA2 enviada via API:", respuesta2, "status:", d.status);
+          } catch (e) {
+            console.error("Error enviando respuesta2:", e.message);
+          }
+        }, 3000);
+      }
 
       cooldownMemoria.set(clave, Date.now());
       await redis.setex("cooldown:" + clave, 5, "true");
@@ -727,6 +870,24 @@ app.post("/webhook", async (req, res) => {
   } catch (error) {
     console.error("Error webhook:", error);
     res.status(500).json({ error: "Error interno" });
+  }
+});
+
+app.delete("/historial/:clave", async (req, res) => {
+  if (req.query.telefono !== "5218123793904") {
+    return res.status(403).json({ error: "No autorizado" });
+  }
+  try {
+    const clave = req.params.clave;
+    await redis.del("conv:" + clave);
+    await redis.del("congelado:" + clave);
+    await redis.del("lead:" + clave);
+    await redis.del("seguimiento:" + clave);
+    await redis.del("cooldown:" + clave);
+    console.log("Historial borrado para:", clave);
+    res.json({ ok: true, clave });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -765,7 +926,7 @@ app.get("/citas", async (req, res) => {
 });
 
 app.get("/limpiar", async (req, res) => {
-  if (req.query.secret !== "daniel2024") {
+  if (req.query.secret !== "daniel2024" || req.query.telefono !== "5218123793904") {
     return res.status(403).json({ error: "Acceso denegado" });
   }
   try {
@@ -816,6 +977,92 @@ app.get("/estado/:clave", async (req, res) => {
       congelado: !!congelado,
       seguimiento: seguimiento ? (typeof seguimiento === "string" ? JSON.parse(seguimiento) : seguimiento) : null,
       visita: visita ? (typeof visita === "string" ? JSON.parse(visita) : visita) : null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/dashboard", async (req, res) => {
+  if (req.query.secret !== "daniel2024") return res.status(403).json({ error: "No autorizado" });
+  try {
+    const [leadKeys, visitaKeys, convKeys, congeladoKeys, segKeys] = await Promise.all([
+      redis.keys("lead:*"),
+      redis.keys("visita:*"),
+      redis.keys("conv:*"),
+      redis.keys("congelado:*"),
+      redis.keys("seguimiento:*"),
+    ]);
+
+    const leads = [];
+    for (const key of convKeys) {
+      const clave = key.replace("conv:", "");
+      const [convRaw, segRaw, visitaRaw, congelado] = await Promise.all([
+        redis.get(key),
+        redis.get("seguimiento:" + clave),
+        redis.get("visita:" + clave),
+        redis.get("congelado:" + clave),
+      ]);
+      const conv = convRaw ? (typeof convRaw === "string" ? JSON.parse(convRaw) : convRaw) : [];
+      const seg = segRaw ? (typeof segRaw === "string" ? JSON.parse(segRaw) : segRaw) : null;
+      const visita = visitaRaw ? (typeof visitaRaw === "string" ? JSON.parse(visitaRaw) : visitaRaw) : null;
+
+      let estado = "nuevo";
+      const textos = conv.map(m => m.content || "").join(" ").toLowerCase();
+      if (congelado) estado = "visita_pendiente";
+      else if (visita) estado = "visita_agendada";
+      else if (textos.includes("alerta_presupuesto_ok") || textos.includes("le comparto el folleto")) estado = "presupuesto_ok";
+      else if (textos.includes("que le parece el plan") || textos.includes("plan de pagos")) estado = "interesado";
+
+      // Calificación del lead
+      const reciente = seg?.timestamp && (Date.now() - seg.timestamp) < 86400000;
+      const tieneTelefono = !!seg?.telefono;
+      let score, scoreLabel, scoreColor;
+      if (estado === "visita_agendada") {
+        score = "A+"; scoreLabel = "Cita agendada"; scoreColor = "#00b85a";
+      } else if (estado === "visita_pendiente") {
+        score = "A"; scoreLabel = "Quiere visitar"; scoreColor = "#00b85a";
+      } else if (estado === "presupuesto_ok") {
+        score = "A"; scoreLabel = "Presupuesto OK"; scoreColor = "#00b85a";
+      } else if (estado === "interesado" && conv.length >= 8) {
+        score = "B+"; scoreLabel = "Muy interesado"; scoreColor = "#c8a96e";
+      } else if (estado === "interesado") {
+        score = "B"; scoreLabel = "Interesado"; scoreColor = "#c8a96e";
+      } else if (conv.length >= 4 || (tieneTelefono && reciente)) {
+        score = "C"; scoreLabel = "En conversación"; scoreColor = "#7b9fff";
+      } else {
+        score = "D"; scoreLabel = "Nuevo"; scoreColor = "#aaa";
+      }
+
+      leads.push({
+        clave,
+        nombre: seg?.nombre || seg?.subscriberId || clave,
+        telefono: seg?.telefono || null,
+        mensajes: conv.length,
+        ultimoMensaje: seg?.ultimoMensaje || "",
+        timestamp: seg?.timestamp || null,
+        estado,
+        congelado: !!congelado,
+        visita: visita?.detalle || null,
+        historial: conv.slice(-10),
+        score, scoreLabel, scoreColor,
+      });
+    }
+
+    const ordenScore = { "A+": 0, "A": 1, "B+": 2, "B": 3, "C": 4, "D": 5 };
+    const presupuestosOK = leads.filter(l => l.estado === "presupuesto_ok").length;
+    const visitasPendientes = leads.filter(l => l.estado === "visita_pendiente" || l.estado === "visita_agendada").length;
+    const calientes = leads.filter(l => l.score === "A+" || l.score === "A").length;
+
+    res.json({
+      stats: {
+        totalLeads: leadKeys.length,
+        conversacionesActivas: convKeys.length,
+        visitasPendientes,
+        presupuestosOK,
+        calientes,
+      },
+      leads: leads.sort((a, b) => (ordenScore[a.score] ?? 9) - (ordenScore[b.score] ?? 9)),
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

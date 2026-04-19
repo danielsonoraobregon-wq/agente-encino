@@ -345,6 +345,11 @@ async function mandarTelegram(mensaje) {
   }
 }
 
+function resumenConversacion(conversacion) {
+  const ultimos = conversacion.slice(-6);
+  return ultimos.map(m => (m.role === 'user' ? '👤' : '🤖') + ' ' + m.content.slice(0, 120)).join('\n');
+}
+
 async function alertaTelegram2(mensaje) {
   try {
     const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -791,7 +796,7 @@ app.post("/webhook", async (req, res) => {
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
         await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", clienteLabel, conversacion);
         await redis.setex("precio_ok_sin_visita:" + clave, 172800, JSON.stringify({ clave, clienteLabel, telefono, timestamp: Date.now() }));
-        await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\nCliente: " + clienteLabel + "\nTeléfono: " + (telefono || clave) + "\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
+        await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\n👤 Cliente: " + clienteLabel + "\n📱 Teléfono: " + (telefono || clave) + "\n\n💬 Resumen:\n" + resumenConversacion(conversacion) + "\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
 
       // Detección de presupuesto OK por keywords si Claude no escribió la señal
       } else if (/\b(si\s+me\s+acomoda|si\s+me\s+alcanza|si\s+puedo|tengo\s+el\s+enganche|si\s+le\s+entr|cuadra\s+el\s+plan)\b/i.test(mensaje) && !alerta) {
@@ -799,7 +804,7 @@ app.post("/webhook", async (req, res) => {
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
         await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", clienteLabel, conversacion);
         await redis.setex("precio_ok_sin_visita:" + clave, 172800, JSON.stringify({ clave, clienteLabel, telefono, timestamp: Date.now() }));
-        await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\nCliente: " + clienteLabel + "\nTeléfono: " + (telefono || clave) + "\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
+        await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\n👤 Cliente: " + clienteLabel + "\n📱 Teléfono: " + (telefono || clave) + "\n\n💬 Resumen:\n" + resumenConversacion(conversacion) + "\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
 
       } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
         alerta = "ALERTA_PRESUPUESTO_BAJO";

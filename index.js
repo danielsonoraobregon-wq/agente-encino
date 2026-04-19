@@ -345,6 +345,21 @@ async function mandarTelegram(mensaje) {
   }
 }
 
+async function alertaTelegram2(mensaje) {
+  try {
+    const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+    const TELEGRAM_CHAT_ID_2 = process.env.TELEGRAM_CHAT_ID_2;
+    if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID_2) return;
+    await fetch("https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID_2, text: mensaje })
+    });
+  } catch (e) {
+    console.error("Error Telegram2:", e);
+  }
+}
+
 const OWNER_SUBSCRIBER_ID = "187186203";
 
 async function alertaOwner(titulo, leadId, conversacion) {
@@ -449,6 +464,19 @@ async function verificarSeguimientos() {
         await redis.setex(clave, 604800, JSON.stringify(seg));
       }
     }
+    // Leads que dijeron sí al precio pero no han agendado en 24hrs
+    const clavesPrecioOk = await redis.keys("precio_ok_sin_visita:*");
+    for (const clave of clavesPrecioOk) {
+      const data = await redis.get(clave);
+      if (!data) continue;
+      const lead = typeof data === "string" ? JSON.parse(data) : data;
+      if (!lead.recordatorio24h && ahora - lead.timestamp > 86400000) {
+        await alertaTelegram2("⏰ RECORDATORIO 24HRS\n\n" + lead.clienteLabel + " dijo SÍ al precio ayer y AÚN NO ha agendado visita.\nTeléfono: " + (lead.telefono || lead.clave) + "\n\n👉 Es momento de llamarle.");
+        lead.recordatorio24h = true;
+        await redis.setex(clave, 86400, JSON.stringify(lead));
+      }
+    }
+
     const clavesLeads = await redis.keys("frio:*");
     for (const clave of clavesLeads) {
       const data = await redis.get(clave);
@@ -727,6 +755,7 @@ app.post("/webhook", async (req, res) => {
         await setBotCongelado(clave, true);
         await mandarEventoMeta("InitiateCheckout", telefono || subscriber_id);
         if (subscriber_id) await ponerEtiqueta(subscriber_id, "cita privada encino");
+        await redis.del("precio_ok_sin_visita:" + clave);
 
       } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
         const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
@@ -761,12 +790,16 @@ app.post("/webhook", async (req, res) => {
         respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
         await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", clienteLabel, conversacion);
+        await redis.setex("precio_ok_sin_visita:" + clave, 172800, JSON.stringify({ clave, clienteLabel, telefono, timestamp: Date.now() }));
+        await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\nCliente: " + clienteLabel + "\nTeléfono: " + (telefono || clave) + "\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
 
       // Detección de presupuesto OK por keywords si Claude no escribió la señal
       } else if (/\b(si\s+me\s+acomoda|si\s+me\s+alcanza|si\s+puedo|tengo\s+el\s+enganche|si\s+le\s+entr|cuadra\s+el\s+plan)\b/i.test(mensaje) && !alerta) {
         alerta = "ALERTA_PRESUPUESTO_OK";
         await mandarEventoMeta("CompleteRegistration", telefono || subscriber_id);
         await alertaOwner("💰 LEAD CON PRESUPUESTO OK — PRIORITARIO", clienteLabel, conversacion);
+        await redis.setex("precio_ok_sin_visita:" + clave, 172800, JSON.stringify({ clave, clienteLabel, telefono, timestamp: Date.now() }));
+        await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\nCliente: " + clienteLabel + "\nTeléfono: " + (telefono || clave) + "\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
 
       } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
         alerta = "ALERTA_PRESUPUESTO_BAJO";

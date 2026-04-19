@@ -1111,6 +1111,12 @@ app.get("/dashboard", async (req, res) => {
   }
 });
 
+app.get("/test-telegram2", async (req, res) => {
+  if (req.query.secret !== "daniel2024") return res.status(403).json({ error: "no" });
+  await alertaTelegram2("💰 PRECIO OK — SIN VISITA\n\n👤 Cliente: Juan Prueba\n📱 Teléfono: 5218123793904\n\n💬 Resumen:\n👤 Cuánto es el enganche?\n🤖 El enganche es $400,000\n👤 Sí me acomoda el plan\n\n⚡ Dijo SÍ al precio pero aún no ha agendado visita.\n👉 Llámale para cerrar la cita.");
+  res.json({ ok: true });
+});
+
 app.get("/", (req, res) => {
   res.json({ status: "Agente Daniel - Privada Encino v3.6 funcionando" });
 });

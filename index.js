@@ -246,8 +246,12 @@ function hashSHA256(valor) {
   return crypto.createHash("sha256").update(valor.toLowerCase().trim()).digest("hex");
 }
 
-function dentroDeHorario() {
-  return true; // 24h para pruebas
+function dentroDeHorario(clave) {
+  if (clave === '5218123793904') return true; // número de pruebas, sin horario
+  const ahora = new Date();
+  const horaMX = new Date(ahora.toLocaleString("en-US", { timeZone: "America/Monterrey" }));
+  const hora = horaMX.getHours();
+  return hora >= 9 && hora < 21;
 }
 
 async function getConversacion(clave) {
@@ -574,7 +578,7 @@ app.post("/webhook", async (req, res) => {
         return res.json({ respuesta1: null, respuesta2: null, alerta: "congelado", foto: false });
       }
 
-      if (!dentroDeHorario()) {
+      if (!dentroDeHorario(clave)) {
         procesando.delete(clave);
         return res.json({
           respuesta1: "Gracias por escribir, con gusto le atiendo manana a primera hora.",

@@ -512,37 +512,46 @@ app.post("/webhook", async (req, res) => {
         conversacion.push({ role: "user", content: mensaje });
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 800,
-          system: SYSTEM_PROMPT,
-          messages: conversacion
-        })
-      });
-      
-      clearTimeout(timeoutId);
+      // Llamada a Claude con reintentos automáticos (hasta 3 intentos)
+      let data = null;
+      let claudeOk = false;
+      for (let intento = 1; intento <= 3; intento++) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          const response = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": ANTHROPIC_API_KEY,
+              "anthropic-version": "2023-06-01"
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-6",
+              max_tokens: 800,
+              system: SYSTEM_PROMPT,
+              messages: conversacion
+            })
+          });
+          clearTimeout(timeoutId);
+          data = await response.json();
+          if (response.ok && data.content && !data.error && data.type !== "error") {
+            claudeOk = true;
+            console.log("Claude OK en intento", intento, "| clave:", clave);
+            break;
+          }
+          console.error("Claude intento", intento, "falló:", response.status, JSON.stringify(data));
+          if (intento < 3) await new Promise(r => setTimeout(r, 1500 * intento));
+        } catch (claudeErr) {
+          console.error("Claude intento", intento, "excepción:", claudeErr.message);
+          if (intento < 3) await new Promise(r => setTimeout(r, 1500 * intento));
+        }
+      }
 
-      const data = await response.json();
-
-      // Verificar errores de la API de Claude antes de procesar
-      if (!response.ok || data.error || data.type === "error") {
-        console.error("Claude API ERROR:", response.status, JSON.stringify(data));
+      if (!claudeOk) {
         procesando.delete(clave);
-        return res.json({
-          respuesta1: "Claro, con gusto le atiendo. Dame un momento.",
-          respuesta2: null, alerta: null, foto: false
-        });
+        return res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
       }
 
       if (data.content) {
@@ -558,6 +567,16 @@ app.post("/webhook", async (req, res) => {
       }
 
       let respuesta = textBlocks.map(b => b.text).join("\n").trim();
+
+      // Forzar saltos de linea correctos en la lista de precios
+      if (respuesta.includes("Lote 1") && respuesta.includes("Lote 3B")) {
+        respuesta = respuesta
+          .replace(/(disponibles:)\s*(Lote)/g, "$1\n$2")
+          .replace(/(\*\$[\d,]+\*)\s*(Lote)/g, "$1\n$2")
+          .replace(/(\*\$[\d,]+\*)\s*(Contamos)/g, "$1\n$2")
+          .replace(/(~\$[\d,]+~[^\n]*\*\$[\d,]+\*)\s*(Lote)/g, "$1\n$2")
+          .replace(/(~\$[\d,]+~[^\n]*\*\$[\d,]+\*)\s*(Contamos)/g, "$1\n$2");
+      }
       console.log("RESPUESTA:", respuesta);
 
       conversacion.push({ role: "assistant", content: respuesta });
@@ -661,13 +680,15 @@ app.post("/webhook", async (req, res) => {
       let respuesta1 = partes[0].trim();
       let respuesta2 = partes[1] ? partes[1].trim() : null;
 
-      // Si la respuesta completa incluye la lista de precios, forzar pregunta de financiamiento como mensaje separado
+      // Si la respuesta incluye la lista de precios, SIEMPRE forzar la pregunta de financiamiento como mensaje separado
       const tienePrecios = respuesta.includes("Lote 1") && respuesta.includes("Lote 3B") && respuesta.includes("Lote 4");
-      const yaIncluyePregunta = respuesta.toLowerCase().includes("plan de") || respuesta.includes("💳");
-      if (tienePrecios && !yaIncluyePregunta) {
-        respuesta2 = "¿Le gustaría conocer el plan de financiamiento? 💳";
-      } else if (tienePrecios && yaIncluyePregunta && partes.length < 2) {
-        // Claude puso la pregunta en el mismo mensaje — separarla igual
+      if (tienePrecios) {
+        // Limpiar cualquier variante de la pregunta que Claude haya puesto en respuesta1
+        respuesta1 = respuesta1
+          .replace(/---[\s\S]*/g, "")
+          .replace(/[\u00bf]?Le\s+gustar[\u00ed]a\s+conocer[^\n?]*\??\s*💳?/gi, "")
+          .trim();
+        // Siempre poner la pregunta fija como segundo mensaje
         respuesta2 = "¿Le gustaría conocer el plan de financiamiento? 💳";
       }
 

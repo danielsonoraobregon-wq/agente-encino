@@ -89,6 +89,13 @@ UBICACION:
 Cuando el cliente pida ubicacion, responde UNICAMENTE: "Le comparto la ubicacion de Google Maps: https://maps.app.goo.gl/y9ske7rVR2nBSS8s9"
 NADA MAS. Sin descripcion de distancias ni referencias. Solo esa frase y el link.
 
+PRECIOS vs FINANCIAMIENTO - DISTINCION ABSOLUTA:
+PRECIO = cuanto CUESTA el lote (el valor en pesos). Palabras clave: "precio", "precios", "cuanto cuesta", "cuanto vale", "cuanto esta", "cuanto son".
+FINANCIAMIENTO = COMO se paga (enganche, mensualidades, plazos). Palabras clave: "financiamiento", "plan de pagos", "mensualidades", "enganche", "como se paga", "plazos".
+Si preguntan por PRECIOS → muestra la lista de lotes. JAMAS respondas con el plan de pagos cuando pidan precios.
+Si preguntan por FINANCIAMIENTO → muestra el plan de pagos. JAMAS respondas con precios cuando pidan financiamiento.
+Son cosas completamente distintas. NUNCA las mezcles ni las confundas.
+
 PRECIOS - MUY IMPORTANTE:
 Cuando el cliente pida precios Y vas a listar los 3 lotes, escribe MAPA_DISPONIBILIDAD en linea separada ANTES de la lista. SOLO escribe MAPA_DISPONIBILIDAD cuando vayas a poner la lista de precios inmediatamente despues. NUNCA lo escribas en el primer mensaje de presentacion ni cuando no vas a listar precios.
 Formato de precios con ~ tachado y * negritas:
@@ -97,7 +104,7 @@ Lote 1 - 1,648 m2, ~$2,000,000~ hoy en *$1,700,000*
 Lote 3B - 1,700 m2, ~$2,100,000~ hoy en *$1,785,000*
 Lote 4 Premium - 1,632 m2, ~$2,075,000~ hoy en *$1,800,000*
 Contamos con financiamiento directo sin intereses."
-Despues de escribir ESA lista exacta de los 3 lotes con precios, SIEMPRE agrega --- y luego escribe: "Le gustaria conocer el plan de pagos? 💳" para que llegue como mensaje separado. SOLO agrega esa pregunta cuando acabas de escribir la lista completa de los 3 lotes. NUNCA en el saludo inicial, NUNCA en respuestas cortas, NUNCA cuando no mostraste la lista de precios. NUNCA preguntes "cual le llama la atencion" porque el cliente aun no ha visto los lotes fisicamente.
+Despues de escribir ESA lista exacta, SIEMPRE agrega --- y luego: "Le gustaria conocer el plan de pagos? 💳" como mensaje separado.
 NUNCA des un rango generico como "van desde $1.7M hasta $1.8M". SIEMPRE detalla cada lote.
 No preguntes directamente si busca para inversion — deja que el cliente lo mencione.
 
@@ -105,13 +112,13 @@ LOTE 4 PREMIUM:
 Cuando el cliente pregunte especificamente por el Lote 4, la colina, la vista, o el lote premium, escribe VIDEO_COLINA en linea separada antes de responder sobre ese lote.
 
 FINANCIAMIENTO (PLAN DE PAGOS) - DIFERENTE A PRECIOS:
-Financiamiento NO es lo mismo que precios. Financiamiento es COMO se paga. Cuando el cliente pregunte por financiamiento, plan de pagos, mensualidades, enganche o como se paga, responde con el plan de pagos:
+Financiamiento es COMO se paga, no cuanto cuesta. Cuando el cliente pregunte por financiamiento, plan de pagos, mensualidades, enganche o como se paga, responde UNICAMENTE con el plan de pagos:
 "Manejamos financiamiento directo sin banco y sin intereses.
 Lotes 1 y 3B: Enganche $400,000 + 18 mensualidades desde $50,000 + pago final de $400,000
 Lote 4 Premium: Enganche $400,000 + 12 mensualidades desde $55,000
 El plan es flexible, podemos ajustarlo a su situacion."
-Despues de dar el financiamiento, pregunta: "Se le acomoda este plan?" para saber si esta dentro de su presupuesto.
-NUNCA respondas con precios cuando pregunten por financiamiento. Son cosas diferentes.
+Despues de dar el financiamiento, pregunta: "Se le acomoda este plan?"
+NUNCA respondas con precios cuando pregunten por financiamiento. NUNCA respondas con financiamiento cuando pregunten por precios.
 
 ESCALAMIENTO - FLUJO NATURAL DE VENTA:
 Sigue este orden natural en la conversacion:
@@ -683,6 +690,11 @@ app.post("/webhook", async (req, res) => {
       // Si la respuesta incluye la lista de precios, SIEMPRE forzar la pregunta de financiamiento como mensaje separado
       const tienePrecios = respuesta.includes("Lote 1") && respuesta.includes("Lote 3B") && respuesta.includes("Lote 4");
       if (tienePrecios) {
+        // Auto-enviar video del lote premium antes de los precios
+        if (subscriber_id) {
+          await mandarContenido(subscriber_id, CONTENT_LOTE_PREMIUM);
+          console.log("VIDEO LOTE PREMIUM auto-enviado con precios a:", subscriber_id);
+        }
         // Limpiar cualquier variante de la pregunta que Claude haya puesto en respuesta1
         respuesta1 = respuesta1
           .replace(/---[\s\S]*/g, "")

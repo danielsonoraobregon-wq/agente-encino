@@ -967,14 +967,14 @@ app.post("/webhook", async (req, res) => {
 
       function formatearPrecios(txt) {
         return sinPreguntas(txt, "financ")
-          .replace(/(Lote [\d\w]+)/g, "\nLote $1")
+          .replace(/(?<!\n)(Lote [\d\w]+)/g, "\n$1")
           .replace(/(Contamos con)/g, "\n$1")
           .replace(/^\n+/, "").trim();
       }
 
-      const tienePrecios = respuesta.includes("1,648 m2") || (respuesta.includes("Lote 1") && respuesta.includes("Lote 3B"));
+      const tienePrecios = respuesta.includes("$1,700,000") || respuesta.includes("$1,785,000");
       if (tienePrecios) {
-        const idxP = partes.findIndex(p => p.includes("1,648 m2") || (p.includes("Lote 1") && p.includes("Lote 3B")));
+        const idxP = partes.findIndex(p => p.includes("$1,700,000") || p.includes("$1,785,000"));
         const idx  = idxP >= 0 ? idxP : 0;
         if (idx === 0) {
           respuesta1 = formatearPrecios(partes[0]);

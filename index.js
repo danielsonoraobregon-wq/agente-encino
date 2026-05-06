@@ -687,366 +687,339 @@ app.post("/webhook", async (req, res) => {
     }
 
     try {
-      // ============================================================
-      // RESPUESTA INMEDIATA — corta retries de ManyChat de raiz
-      // Todo el procesamiento real va en background
-      // ============================================================
-      console.log("WEBHOOK RESPONDIDO INMEDIATO:", clave);
-      res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
+      const congelado = await getBotCongelado(clave);
+      if (congelado) {
+        console.log("Bot congelado para:", clave);
+        await releaseConCooldown();
+        activeRequests.delete(requestId);
+        return res.json({ respuesta1: null, respuesta2: null, alerta: "congelado", foto: false });
+      }
 
-      // ============================================================
-      // PROCESAMIENTO EN BACKGROUND
-      // ============================================================
-      (async () => {
-        try {
-          const congelado = await getBotCongelado(clave);
-          if (congelado) {
-            console.log("Bot congelado para:", clave);
-            await releaseConCooldown();
-            activeRequests.delete(requestId);
-            return;
-          }
+      const esDaniel = telefono === "5218123793904" || subscriber_id === "5218123793904";
+      if (!esDaniel && !dentroDeHorario()) {
+        await releaseConCooldown();
+        activeRequests.delete(requestId);
+        return res.json({
+          respuesta1: "Gracias por escribir, con gusto le atiendo mañana a primera hora.",
+          respuesta2: null, alerta: null, foto: false
+        });
+      }
 
-          const esDaniel = telefono === "5218123793904" || subscriber_id === "5218123793904";
-          if (!esDaniel && !dentroDeHorario()) {
-            if (subscriber_id) {
-              await mandarTexto(subscriber_id, "Gracias por escribir, con gusto le atiendo mañana a primera hora.");
-            }
-            await releaseConCooldown();
-            activeRequests.delete(requestId);
-            return;
-          }
+      const esNuevo = await esNuevoLead(clave);
+      if (esNuevo) {
+        backgroundTask("CAPI-ViewContent", mandarEventoViaManyChat("ViewContent", telefono || null, null, subscriber_id, nombre));
+        await redis.setex("seguimiento:" + clave, 604800, JSON.stringify({
+          subscriberId: subscriber_id, telefono: telefono || null, timestamp: Date.now(), ultimoMensaje: mensaje, alertaEnviada: false
+        }));
+        backgroundTask("frio", redis.setex("frio:" + clave, 1209600, JSON.stringify({
+          subscriberId: subscriber_id, timestamp: Date.now(), alertaEnviada: false
+        })));
 
-          const esNuevo = await esNuevoLead(clave);
-          if (esNuevo) {
-            backgroundTask("CAPI-ViewContent", mandarEventoViaManyChat("ViewContent", telefono || null, null, subscriber_id, nombre));
-            await redis.setex("seguimiento:" + clave, 604800, JSON.stringify({
-              subscriberId: subscriber_id, telefono: telefono || null, timestamp: Date.now(), ultimoMensaje: mensaje, alertaEnviada: false
-            }));
-            backgroundTask("frio", redis.setex("frio:" + clave, 1209600, JSON.stringify({
-              subscriberId: subscriber_id, timestamp: Date.now(), alertaEnviada: false
-            })));
-
-            if (subscriber_id) {
-              await mandarContenido(subscriber_id, CONTENT_VIDEOS);
-              backgroundTask("etiqueta", ponerEtiqueta(subscriber_id, "conversacion privada encino"));
-              console.log("VIDEOS enviados + etiqueta en background para:", clave);
-            } else {
-              console.error("NO SE MANDARON VIDEOS: subscriber_id es null para clave:", clave);
-            }
-          } else {
-            backgroundTask("seguimiento-update", (async () => {
-              const segData = await redis.get("seguimiento:" + clave);
-              if (segData) {
-                const seg = typeof segData === "string" ? JSON.parse(segData) : segData;
-                seg.ultimoMensaje = mensaje;
-                seg.timestamp = Date.now();
-                seg.alertaEnviada = false;
-                await redis.setex("seguimiento:" + clave, 604800, JSON.stringify(seg));
-              }
-            })());
-          }
-
-          let conversacion = await getConversacion(clave);
-          
-          if (!esNuevo && conversacion.length === 0) {
-            console.log("BOT SILENCIADO: conversacion expirada para:", clave);
-            backgroundTask("lead-volvio", mandarTelegram("LEAD VOLVIO A ESCRIBIR (bot silenciado)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot ya no responde. Escribele manualmente si quieres."));
-            await releaseConCooldown();
-            activeRequests.delete(requestId);
-            return;
-          }
-          
-          console.log("HISTORIAL:", clave, "esNuevo:", esNuevo, "mensajes:", conversacion.length);
-
-          let mensajesPendientes = [];
-          try {
-            const pendingKey = "pending:" + clave;
-            const pendingRaw = await redis.get(pendingKey);
-            if (pendingRaw) {
-              mensajesPendientes = typeof pendingRaw === "string" ? JSON.parse(pendingRaw) : pendingRaw;
-              await redis.del(pendingKey);
-              console.log("MENSAJES PENDIENTES RECUPERADOS:", clave, "cantidad:", mensajesPendientes.length);
-            }
-          } catch (e) {
-            console.error("Error leyendo pendientes:", e);
-          }
-
-          let mensajeCompleto = mensaje;
-          if (mensajesPendientes.length > 0) {
-            mensajeCompleto = mensaje + "\n" + mensajesPendientes.join("\n");
-            console.log("MENSAJE COMBINADO para Claude:", mensajeCompleto);
-          }
-
-          if (primer_mensaje && conversacion.length === 0) {
-            let contexto = "[PRIMERA INTERACCION - El cliente NO ha recibido ninguna informacion tuya aun. Debes presentarte como Daniel Soliz. El historial esta vacio.]";
-            if (primer_mensaje !== mensajeCompleto && primer_mensaje !== mensaje) {
-              contexto += " [Llego por un anuncio, su primer mensaje del anuncio fue: " + primer_mensaje + "]";
-            }
-            conversacion.push({
-              role: "user",
-              content: contexto + " " + mensajeCompleto
-            });
-          } else if (conversacion.length > 0) {
-            conversacion.push({
-              role: "user",
-              content: "[Conversacion en curso, mensaje #" + (Math.floor(conversacion.length / 2) + 1) + " del cliente. NO te presentes de nuevo.] " + mensajeCompleto
-            });
-          } else {
-            conversacion.push({ role: "user", content: mensajeCompleto });
-          }
-
-          // CLAUDE — ya no hay riesgo de timeout porque el webhook ya respondio
-          let data = null;
-          let claudeOk = false;
-          for (let intento = 1; intento <= 2; intento++) {
-            try {
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 25000);
-              const response = await fetch("https://api.anthropic.com/v1/messages", {
-                method: "POST", signal: controller.signal,
-                headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-                body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 800, system: SYSTEM_PROMPT, messages: conversacion })
-              });
-              clearTimeout(timeoutId);
-              data = await response.json();
-              if (response.ok && data.content && !data.error && data.type !== "error") {
-                claudeOk = true;
-                console.log("Claude OK en intento", intento, "| clave:", clave);
-                break;
-              }
-              console.error("Claude intento", intento, "fallo:", response.status, JSON.stringify(data));
-              if (intento < 2) await new Promise(r => setTimeout(r, response.status === 529 ? 3000 : 1000));
-            } catch (claudeErr) {
-              console.error("Claude intento", intento, "excepcion:", claudeErr.message);
-              if (intento < 2) await new Promise(r => setTimeout(r, 1000));
-            }
-          }
-          if (!claudeOk) {
-            if (subscriber_id) await mandarTexto(subscriber_id, "Claro, con gusto le atiendo. Dame un momento.");
-            backgroundTask("claude-fallo-telegram", mandarTelegram("CLAUDE FALLO (API caida)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot le dijo 'Dame un momento'. Respóndele manualmente."));
-            await releaseConCooldown();
-            activeRequests.delete(requestId);
-            return;
-          }
-          if (data.content) { console.log("CLAUDE BLOQUES:", data.content.map(b => b.type).join(", "), "| clave:", clave); }
-          const textBlocks = data.content ? data.content.filter(b => b.type === "text") : [];
-          if (!textBlocks.length) {
-            console.error("Error Claude (sin bloques):", JSON.stringify(data));
-            if (subscriber_id) await mandarTexto(subscriber_id, "Un momento, dejame verificarlo.");
-            backgroundTask("claude-sinbloques-telegram", mandarTelegram("CLAUDE FALLO (sin bloques)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot le dijo 'Un momento'. Respóndele manualmente."));
-            await releaseConCooldown();
-            activeRequests.delete(requestId);
-            return;
-          }
-
-          let respuesta = textBlocks.map(b => b.text).join("\n").trim();
-          console.log("RESPUESTA:", respuesta);
-
-          conversacion.push({ role: "assistant", content: respuesta });
-          if (conversacion.length > 20) {
-            conversacion = conversacion.slice(-20);
-            if (conversacion[0].role === "assistant") conversacion = conversacion.slice(1);
-          }
-          
-          await setConversacion(clave, conversacion);
-
-          if (conversacion.length >= 6) {
-            const icKey = "capi_ic:" + clave;
-            const icEnviado = await redis.get(icKey);
-            if (!icEnviado) {
-              await redis.setex(icKey, 2592000, "true");
-              backgroundTask("CAPI-InitiateCheckout", mandarEventoViaManyChat("InitiateCheckout", telefono || null, null, subscriber_id, nombre));
-              console.log("CAPI InitiateCheckout disparado para:", clave, "mensajes:", conversacion.length);
-            }
-          }
-
-          let alerta = null;
-          let foto = false;
-          let mandarPDF = false;
-
-          respuesta = respuesta.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
-
-          if (respuesta.includes("MAPA_DISPONIBILIDAD")) {
-            respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
-            if (subscriber_id) {
-              await mandarContenido(subscriber_id, CONTENT_MAPA);
-              console.log("MAPA enviado antes del texto:", subscriber_id);
-            }
-          }
-
-          if (respuesta.includes("PDF_ENCINO")) {
-            mandarPDF = true;
-            respuesta = respuesta.replace(/PDF_ENCINO/g, "").trim();
-            if (subscriber_id) {
-              await mandarContenido(subscriber_id, CONTENT_PDF);
-              console.log("PDF enviado antes del texto:", telefono || subscriber_id);
-            }
-          }
-
-          if (respuesta.includes("ALERTA_VISITA_PENDIENTE")) {
-            const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:(.+)/);
-            alerta = "ALERTA_VISITA_PENDIENTE";
-            respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
-            const detalle = match ? match[1] : "";
-            backgroundTask("visita-telegram", mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar"));
-            backgroundTask("visita-save", guardarVisita(clave, detalle));
-            backgroundTask("visita-congelar", setBotCongelado(clave, true));
-            const schedKey = "capi_sched:" + clave;
-            const schedEnviado = await redis.get(schedKey);
-            if (!schedEnviado) {
-              await redis.setex(schedKey, 2592000, "true");
-              backgroundTask("visita-capi", mandarEventoViaManyChat("Schedule", telefono || null, null, subscriber_id, nombre));
-            }
-            if (subscriber_id) backgroundTask("visita-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
-
-          } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
-            const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
-            alerta = "ALERTA_VISITA_CONFIRMADA";
-            respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:.+/g, "").trim();
-            backgroundTask("confirmada-telegram", mandarTelegram("VISITA CONFIRMADA\n" + (match ? match[1] : telefono)));
-            if (subscriber_id) backgroundTask("confirmada-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
-
-          } else if (respuesta.includes("ALERTA_VISITA_OTRO_DIA")) {
-            const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:(.+)/);
-            alerta = "ALERTA_VISITA_OTRO_DIA";
-            respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
-            backgroundTask("otroDia-telegram", mandarTelegram("Visita otro dia\nCliente: " + (telefono || subscriber_id) + "\nDia: " + (match ? match[1] : "")));
-
-          } else if (respuesta.includes("ALERTA_AUDIO")) {
-            alerta = "ALERTA_AUDIO";
-            respuesta = respuesta.replace(/ALERTA_AUDIO/g, "").trim();
-            backgroundTask("audio-congelar", setBotCongelado(clave, true));
-
-          } else if (respuesta.includes("ALERTA_LEGAL")) {
-            alerta = "ALERTA_LEGAL";
-            respuesta = respuesta.replace(/ALERTA_LEGAL/g, "").trim();
-
-          } else if (respuesta.includes("ALERTA_NO_SABE")) {
-            alerta = "ALERTA_NO_SABE";
-            respuesta = respuesta.replace(/ALERTA_NO_SABE/g, "").trim();
-            backgroundTask("noSabe-telegram", mandarTelegram("No sabe responder\nCliente: " + (telefono || subscriber_id) + "\nPregunta: " + mensaje));
-
-          } else if (respuesta.includes("ALERTA_PRESUPUESTO_OK")) {
-            alerta = "ALERTA_PRESUPUESTO_OK";
-            respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
-            const crKey = "capi_cr:" + clave;
-            const crEnviado = await redis.get(crKey);
-            if (!crEnviado) {
-              await redis.setex(crKey, 2592000, "true");
-              backgroundTask("presupuesto-capi", mandarEventoViaManyChat("CompleteRegistration", telefono || null, null, subscriber_id, nombre));
-            }
-
-          } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
-            alerta = "ALERTA_PRESUPUESTO_BAJO";
-            respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_BAJO/g, "").trim();
-
-          } else if (respuesta.includes("ALERTA_SEGUIMIENTO")) {
-            const match = respuesta.match(/ALERTA_SEGUIMIENTO:(.+)/);
-            alerta = "ALERTA_SEGUIMIENTO";
-            respuesta = respuesta.replace(/ALERTA_SEGUIMIENTO:.+/g, "").trim();
-            const detalle = match ? match[1] : "";
-            backgroundTask("seguimiento-telegram", mandarTelegram("SEGUIMIENTO\nCliente: " + (telefono || subscriber_id) + "\nPide contacto: " + detalle));
-
-          } else if (respuesta.includes("ALERTA_CIERRE_VENTA")) {
-            alerta = "ALERTA_CIERRE_VENTA";
-            respuesta = respuesta.replace(/ALERTA_CIERRE_VENTA/g, "").trim();
-            const purchKey = "capi_purch:" + clave;
-            const purchEnviado = await redis.get(purchKey);
-            if (!purchEnviado) {
-              await redis.setex(purchKey, 2592000, "true");
-              backgroundTask("cierre-capi", mandarEventoViaManyChat("Purchase", telefono || null, 1700000, subscriber_id, nombre));
-            }
-            backgroundTask("cierre-telegram", mandarTelegram("CIERRE DE VENTA\nCliente: " + (telefono || subscriber_id)));
-          }
-
-          if (respuesta.includes("ALERTA_PDF_ENVIADO")) {
-            respuesta = respuesta.replace(/ALERTA_PDF_ENVIADO/g, "").trim();
-          }
-
-          const PREG_FINANC = "\u00bfLe gustar\u00eda conocer el plan de financiamiento? \uD83D\uDCB3";
-          const PREG_PLAN   = "\u00bfQu\u00e9 le parece este plan?";
-
-          const partes = respuesta.split("---");
-          let respuesta1 = partes[0].trim();
-          let respuesta2 = partes.length > 1 ? partes.slice(1).join("\n").trim() : null;
-
-          function sinPreguntas(txt, tipo) {
-            return txt.split("\n").filter(function(l) {
-              var ll = l.toLowerCase();
-              if (tipo === "financ") return ll.indexOf("le gustaria conocer") < 0 && ll.indexOf("le parece") < 0 && l.trim() !== "\uD83D\uDCB3";
-              return ll.indexOf("le parece") < 0 && ll.indexOf("se le acomoda") < 0;
-            }).join("\n").trim();
-          }
-
-          function formatearPrecios(txt) {
-            return sinPreguntas(txt, "financ")
-              .replace(/(Lote [\d\w]+)/g, "\nLote $1")
-              .replace(/(Contamos con)/g, "\n$1")
-              .replace(/^\n+/, "").trim();
-          }
-
-          const tienePrecios = respuesta.includes("1,648 m2") || (respuesta.includes("Lote 1") && respuesta.includes("Lote 3B"));
-          if (tienePrecios) {
-            const idxP = partes.findIndex(p => p.includes("1,648 m2") || (p.includes("Lote 1") && p.includes("Lote 3B")));
-            const idx  = idxP >= 0 ? idxP : 0;
-            if (idx === 0) {
-              respuesta1 = formatearPrecios(partes[0]);
-              respuesta2 = PREG_FINANC;
-            } else {
-              respuesta1 = partes.slice(0, idx).join("\n").trim() + "\n\n" + formatearPrecios(partes[idx]);
-              respuesta2 = PREG_FINANC;
-            }
-            console.log("PRECIOS OK r1:", respuesta1.length, "r2:", respuesta2);
-          }
-
-          const tieneFinanciamiento = !tienePrecios && (respuesta.includes("Manejamos financiamiento") || respuesta.includes("mensualidades de"));
-          if (tieneFinanciamiento) {
-            const idxF   = partes.findIndex(p => p.includes("Manejamos financiamiento") || p.includes("mensualidades de"));
-            const idxFin = idxF >= 0 ? idxF : 0;
-            if (idxFin === 0) {
-              respuesta1 = sinPreguntas(partes[0], "plan");
-              respuesta2 = PREG_PLAN;
-            } else {
-              respuesta1 = partes.slice(0, idxFin).join("\n").trim() + "\n\n" + sinPreguntas(partes[idxFin], "plan");
-              respuesta2 = PREG_PLAN;
-            }
-            console.log("FINANCIAMIENTO OK r1:", respuesta1.length, "r2:", respuesta2);
-          }
-
-          console.log("FINAL r1:", respuesta1 ? respuesta1.substring(0,50) : "VACIA", "| r2:", respuesta2 || "null");
-          
-          // ============================================================
-          // ENVIAR MENSAJES VIA API DE MANYCHAT
-          // ============================================================
-          if (subscriber_id && respuesta1) {
-            await mandarTexto(subscriber_id, respuesta1);
-            if (respuesta2) {
-              await new Promise(r => setTimeout(r, 1000));
-              await mandarTexto(subscriber_id, respuesta2);
-            }
-          }
-
-          await releaseConCooldown();
-          activeRequests.delete(requestId);
-
-        } catch (innerError) {
-          console.error("Error en background processing:", innerError);
-          try {
-            cooldownMemoria.set(clave, Date.now());
-            await redis.setex(cooldownKey, 30, "true");
-            const currentVal = await redis.get("lock:" + clave);
-            if (currentVal === requestId) {
-              await redis.del("lock:" + clave);
-            }
-          } catch (e) { /* ignore */ }
-          activeRequests.delete(requestId);
+        if (subscriber_id) {
+          await mandarContenido(subscriber_id, CONTENT_VIDEOS);
+          backgroundTask("etiqueta", ponerEtiqueta(subscriber_id, "conversacion privada encino"));
+          console.log("VIDEOS enviados + etiqueta en background para:", clave);
+        } else {
+          console.error("NO SE MANDARON VIDEOS: subscriber_id es null para clave:", clave);
         }
-      })();
+      } else {
+        backgroundTask("seguimiento-update", (async () => {
+          const segData = await redis.get("seguimiento:" + clave);
+          if (segData) {
+            const seg = typeof segData === "string" ? JSON.parse(segData) : segData;
+            seg.ultimoMensaje = mensaje;
+            seg.timestamp = Date.now();
+            seg.alertaEnviada = false;
+            await redis.setex("seguimiento:" + clave, 604800, JSON.stringify(seg));
+          }
+        })());
+      }
+
+      let conversacion = await getConversacion(clave);
+      
+      if (!esNuevo && conversacion.length === 0) {
+        console.log("BOT SILENCIADO: conversacion expirada para:", clave);
+        backgroundTask("lead-volvio", mandarTelegram("LEAD VOLVIO A ESCRIBIR (bot silenciado)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot ya no responde. Escribele manualmente si quieres."));
+        await releaseConCooldown();
+        activeRequests.delete(requestId);
+        return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
+      }
+      
+      console.log("HISTORIAL:", clave, "esNuevo:", esNuevo, "mensajes:", conversacion.length);
+
+      let mensajesPendientes = [];
+      try {
+        const pendingKey = "pending:" + clave;
+        const pendingRaw = await redis.get(pendingKey);
+        if (pendingRaw) {
+          mensajesPendientes = typeof pendingRaw === "string" ? JSON.parse(pendingRaw) : pendingRaw;
+          await redis.del(pendingKey);
+          console.log("MENSAJES PENDIENTES RECUPERADOS:", clave, "cantidad:", mensajesPendientes.length);
+        }
+      } catch (e) {
+        console.error("Error leyendo pendientes:", e);
+      }
+
+      let mensajeCompleto = mensaje;
+      if (mensajesPendientes.length > 0) {
+        mensajeCompleto = mensaje + "\n" + mensajesPendientes.join("\n");
+        console.log("MENSAJE COMBINADO para Claude:", mensajeCompleto);
+      }
+
+      if (primer_mensaje && conversacion.length === 0) {
+        let contexto = "[PRIMERA INTERACCION - El cliente NO ha recibido ninguna informacion tuya aun. Debes presentarte como Daniel Soliz. El historial esta vacio.]";
+        if (primer_mensaje !== mensajeCompleto && primer_mensaje !== mensaje) {
+          contexto += " [Llego por un anuncio, su primer mensaje del anuncio fue: " + primer_mensaje + "]";
+        }
+        conversacion.push({
+          role: "user",
+          content: contexto + " " + mensajeCompleto
+        });
+      } else if (conversacion.length > 0) {
+        conversacion.push({
+          role: "user",
+          content: "[Conversacion en curso, mensaje #" + (Math.floor(conversacion.length / 2) + 1) + " del cliente. NO te presentes de nuevo.] " + mensajeCompleto
+        });
+      } else {
+        conversacion.push({ role: "user", content: mensajeCompleto });
+      }
+
+      // ============================================================
+      // CLAUDE — timeout de 15s, 2 reintentos
+      // ============================================================
+      let data = null;
+      let claudeOk = false;
+      for (let intento = 1; intento <= 2; intento++) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
+          const response = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST", signal: controller.signal,
+            headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 800, system: SYSTEM_PROMPT, messages: conversacion })
+          });
+          clearTimeout(timeoutId);
+          data = await response.json();
+          if (response.ok && data.content && !data.error && data.type !== "error") {
+            claudeOk = true;
+            console.log("Claude OK en intento", intento, "| clave:", clave);
+            break;
+          }
+          console.error("Claude intento", intento, "fallo:", response.status, JSON.stringify(data));
+          if (intento < 2) await new Promise(r => setTimeout(r, response.status === 529 ? 3000 : 1000));
+        } catch (claudeErr) {
+          console.error("Claude intento", intento, "excepcion:", claudeErr.message);
+          if (intento < 2) await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+      if (!claudeOk) {
+        backgroundTask("claude-fallo-telegram", mandarTelegram("CLAUDE FALLO (API caida)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot le dijo 'Dame un momento'. Respondele manualmente."));
+        await releaseConCooldown();
+        activeRequests.delete(requestId);
+        return res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
+      }
+      if (data.content) { console.log("CLAUDE BLOQUES:", data.content.map(b => b.type).join(", "), "| clave:", clave); }
+      const textBlocks = data.content ? data.content.filter(b => b.type === "text") : [];
+      if (!textBlocks.length) {
+        console.error("Error Claude (sin bloques):", JSON.stringify(data));
+        backgroundTask("claude-sinbloques-telegram", mandarTelegram("CLAUDE FALLO (sin bloques)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot le dijo 'Un momento'. Respondele manualmente."));
+        await releaseConCooldown();
+        activeRequests.delete(requestId);
+        return res.json({ respuesta1: "Un momento, dejame verificarlo.", respuesta2: null, alerta: null, foto: false });
+      }
+
+      let respuesta = textBlocks.map(b => b.text).join("\n").trim();
+      console.log("RESPUESTA:", respuesta);
+
+      conversacion.push({ role: "assistant", content: respuesta });
+      if (conversacion.length > 20) {
+        conversacion = conversacion.slice(-20);
+        if (conversacion[0].role === "assistant") conversacion = conversacion.slice(1);
+      }
+      
+      await setConversacion(clave, conversacion);
+
+      if (conversacion.length >= 6) {
+        const icKey = "capi_ic:" + clave;
+        const icEnviado = await redis.get(icKey);
+        if (!icEnviado) {
+          await redis.setex(icKey, 2592000, "true");
+          backgroundTask("CAPI-InitiateCheckout", mandarEventoViaManyChat("InitiateCheckout", telefono || null, null, subscriber_id, nombre));
+          console.log("CAPI InitiateCheckout disparado para:", clave, "mensajes:", conversacion.length);
+        }
+      }
+
+      let alerta = null;
+      let foto = false;
+
+      respuesta = respuesta.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
+
+      if (respuesta.includes("MAPA_DISPONIBILIDAD")) {
+        respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
+        if (subscriber_id) {
+          await mandarContenido(subscriber_id, CONTENT_MAPA);
+          console.log("MAPA enviado antes del texto:", subscriber_id);
+        }
+      }
+
+      if (respuesta.includes("PDF_ENCINO")) {
+        respuesta = respuesta.replace(/PDF_ENCINO/g, "").trim();
+        if (subscriber_id) {
+          await mandarContenido(subscriber_id, CONTENT_PDF);
+          console.log("PDF enviado antes del texto:", telefono || subscriber_id);
+        }
+      }
+
+      if (respuesta.includes("ALERTA_VISITA_PENDIENTE")) {
+        const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:(.+)/);
+        alerta = "ALERTA_VISITA_PENDIENTE";
+        respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
+        const detalle = match ? match[1] : "";
+        backgroundTask("visita-telegram", mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar"));
+        backgroundTask("visita-save", guardarVisita(clave, detalle));
+        backgroundTask("visita-congelar", setBotCongelado(clave, true));
+        const schedKey = "capi_sched:" + clave;
+        const schedEnviado = await redis.get(schedKey);
+        if (!schedEnviado) {
+          await redis.setex(schedKey, 2592000, "true");
+          backgroundTask("visita-capi", mandarEventoViaManyChat("Schedule", telefono || null, null, subscriber_id, nombre));
+        }
+        if (subscriber_id) backgroundTask("visita-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
+
+      } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
+        const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
+        alerta = "ALERTA_VISITA_CONFIRMADA";
+        respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:.+/g, "").trim();
+        backgroundTask("confirmada-telegram", mandarTelegram("VISITA CONFIRMADA\n" + (match ? match[1] : telefono)));
+        if (subscriber_id) backgroundTask("confirmada-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
+
+      } else if (respuesta.includes("ALERTA_VISITA_OTRO_DIA")) {
+        const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:(.+)/);
+        alerta = "ALERTA_VISITA_OTRO_DIA";
+        respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
+        backgroundTask("otroDia-telegram", mandarTelegram("Visita otro dia\nCliente: " + (telefono || subscriber_id) + "\nDia: " + (match ? match[1] : "")));
+
+      } else if (respuesta.includes("ALERTA_AUDIO")) {
+        alerta = "ALERTA_AUDIO";
+        respuesta = respuesta.replace(/ALERTA_AUDIO/g, "").trim();
+        backgroundTask("audio-congelar", setBotCongelado(clave, true));
+
+      } else if (respuesta.includes("ALERTA_LEGAL")) {
+        alerta = "ALERTA_LEGAL";
+        respuesta = respuesta.replace(/ALERTA_LEGAL/g, "").trim();
+
+      } else if (respuesta.includes("ALERTA_NO_SABE")) {
+        alerta = "ALERTA_NO_SABE";
+        respuesta = respuesta.replace(/ALERTA_NO_SABE/g, "").trim();
+        backgroundTask("noSabe-telegram", mandarTelegram("No sabe responder\nCliente: " + (telefono || subscriber_id) + "\nPregunta: " + mensaje));
+
+      } else if (respuesta.includes("ALERTA_PRESUPUESTO_OK")) {
+        alerta = "ALERTA_PRESUPUESTO_OK";
+        respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
+        const crKey = "capi_cr:" + clave;
+        const crEnviado = await redis.get(crKey);
+        if (!crEnviado) {
+          await redis.setex(crKey, 2592000, "true");
+          backgroundTask("presupuesto-capi", mandarEventoViaManyChat("CompleteRegistration", telefono || null, null, subscriber_id, nombre));
+        }
+
+      } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
+        alerta = "ALERTA_PRESUPUESTO_BAJO";
+        respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_BAJO/g, "").trim();
+
+      } else if (respuesta.includes("ALERTA_SEGUIMIENTO")) {
+        const match = respuesta.match(/ALERTA_SEGUIMIENTO:(.+)/);
+        alerta = "ALERTA_SEGUIMIENTO";
+        respuesta = respuesta.replace(/ALERTA_SEGUIMIENTO:.+/g, "").trim();
+        const detalle = match ? match[1] : "";
+        backgroundTask("seguimiento-telegram", mandarTelegram("SEGUIMIENTO\nCliente: " + (telefono || subscriber_id) + "\nPide contacto: " + detalle));
+
+      } else if (respuesta.includes("ALERTA_CIERRE_VENTA")) {
+        alerta = "ALERTA_CIERRE_VENTA";
+        respuesta = respuesta.replace(/ALERTA_CIERRE_VENTA/g, "").trim();
+        const purchKey = "capi_purch:" + clave;
+        const purchEnviado = await redis.get(purchKey);
+        if (!purchEnviado) {
+          await redis.setex(purchKey, 2592000, "true");
+          backgroundTask("cierre-capi", mandarEventoViaManyChat("Purchase", telefono || null, 1700000, subscriber_id, nombre));
+        }
+        backgroundTask("cierre-telegram", mandarTelegram("CIERRE DE VENTA\nCliente: " + (telefono || subscriber_id)));
+      }
+
+      if (respuesta.includes("ALERTA_PDF_ENVIADO")) {
+        respuesta = respuesta.replace(/ALERTA_PDF_ENVIADO/g, "").trim();
+      }
+
+      const PREG_FINANC = "\u00bfLe gustar\u00eda conocer el plan de financiamiento? \uD83D\uDCB3";
+      const PREG_PLAN   = "\u00bfQu\u00e9 le parece este plan?";
+
+      const partes = respuesta.split("---");
+      let respuesta1 = partes[0].trim();
+      let respuesta2 = partes.length > 1 ? partes.slice(1).join("\n").trim() : null;
+
+      function sinPreguntas(txt, tipo) {
+        return txt.split("\n").filter(function(l) {
+          var ll = l.toLowerCase();
+          if (tipo === "financ") return ll.indexOf("le gustaria conocer") < 0 && ll.indexOf("le parece") < 0 && l.trim() !== "\uD83D\uDCB3";
+          return ll.indexOf("le parece") < 0 && ll.indexOf("se le acomoda") < 0;
+        }).join("\n").trim();
+      }
+
+      function formatearPrecios(txt) {
+        return sinPreguntas(txt, "financ")
+          .replace(/(Lote [\d\w]+)/g, "\nLote $1")
+          .replace(/(Contamos con)/g, "\n$1")
+          .replace(/^\n+/, "").trim();
+      }
+
+      const tienePrecios = respuesta.includes("1,648 m2") || (respuesta.includes("Lote 1") && respuesta.includes("Lote 3B"));
+      if (tienePrecios) {
+        const idxP = partes.findIndex(p => p.includes("1,648 m2") || (p.includes("Lote 1") && p.includes("Lote 3B")));
+        const idx  = idxP >= 0 ? idxP : 0;
+        if (idx === 0) {
+          respuesta1 = formatearPrecios(partes[0]);
+          respuesta2 = PREG_FINANC;
+        } else {
+          respuesta1 = partes.slice(0, idx).join("\n").trim() + "\n\n" + formatearPrecios(partes[idx]);
+          respuesta2 = PREG_FINANC;
+        }
+        console.log("PRECIOS OK r1:", respuesta1.length, "r2:", respuesta2);
+      }
+
+      const tieneFinanciamiento = !tienePrecios && (respuesta.includes("Manejamos financiamiento") || respuesta.includes("mensualidades de"));
+      if (tieneFinanciamiento) {
+        const idxF   = partes.findIndex(p => p.includes("Manejamos financiamiento") || p.includes("mensualidades de"));
+        const idxFin = idxF >= 0 ? idxF : 0;
+        if (idxFin === 0) {
+          respuesta1 = sinPreguntas(partes[0], "plan");
+          respuesta2 = PREG_PLAN;
+        } else {
+          respuesta1 = partes.slice(0, idxFin).join("\n").trim() + "\n\n" + sinPreguntas(partes[idxFin], "plan");
+          respuesta2 = PREG_PLAN;
+        }
+        console.log("FINANCIAMIENTO OK r1:", respuesta1.length, "r2:", respuesta2);
+      }
+
+      console.log("FINAL r1:", respuesta1 ? respuesta1.substring(0,50) : "VACIA", "| r2:", respuesta2 || "null");
+
+      await releaseConCooldown();
+      activeRequests.delete(requestId);
+      return res.json({ respuesta1, respuesta2, alerta, foto: false });
 
     } catch (error) {
-      console.error("Error webhook pre-background:", error);
+      console.error("Error webhook procesamiento:", error);
+      try {
+        cooldownMemoria.set(clave, Date.now());
+        await redis.setex(cooldownKey, 30, "true");
+        const currentVal = await redis.get("lock:" + clave);
+        if (currentVal === requestId) {
+          await redis.del("lock:" + clave);
+        }
+      } catch (e) { /* ignore */ }
       activeRequests.delete(requestId);
+      if (!res.headersSent) {
+        return res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
+      }
     }
 
   } catch (error) {

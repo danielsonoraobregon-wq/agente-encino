@@ -408,64 +408,10 @@ const EVENTO_A_ETIQUETA = {
   "Purchase":             "capi_purchase"
 };
 
-// NUEVO FLUJO: Railway → ManyChat (etiqueta) → Facebook Event
+// CAPI DIRECTO: Railway → Facebook (sin pasar por ManyChat)
 async function mandarEventoViaManyChat(evento, telefono, value, subscriberId, nombre) {
-  const etiqueta = EVENTO_A_ETIQUETA[evento];
-  if (!etiqueta) {
-    console.error("EVENTO SIN MAPEO:", evento, "— no se encontró etiqueta correspondiente");
-    return;
-  }
-
-  // Sin subscriber_id no podemos etiquetar en ManyChat
-  if (!subscriberId) {
-    console.error("MANYCHAT EVENTO: sin subscriber_id para", evento, "tel:", telefono);
-    // Fallback a CAPI directo si no hay subscriber_id
-    console.log("FALLBACK → CAPI directo para:", evento);
-    await mandarEventoMetaDirecto(evento, telefono, value, subscriberId, nombre);
-    return;
-  }
-
-  try {
-    console.log("MANYCHAT EVENTO:", evento, "→ etiqueta:", etiqueta, "subscriber:", subscriberId);
-    await fetchConTimeout("https://api.manychat.com/fb/subscriber/addTag", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + MANYCHAT_API_KEY
-      },
-      body: JSON.stringify({
-        subscriber_id: subscriberId,
-        tag_name: etiqueta
-      })
-    });
-    console.log("MANYCHAT ETIQUETA OK:", etiqueta, "para subscriber:", subscriberId);
-
-    // Si el evento tiene value, guardar como custom field para que ManyChat lo envíe
-    if (value && value > 0) {
-      try {
-        await fetchConTimeout("https://api.manychat.com/fb/subscriber/setCustomField", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + MANYCHAT_API_KEY
-          },
-          body: JSON.stringify({
-            subscriber_id: subscriberId,
-            field_name: "capi_event_value",
-            field_value: value
-          })
-        });
-        console.log("MANYCHAT CUSTOM FIELD capi_event_value =", value);
-      } catch (cfErr) {
-        console.error("Error custom field ManyChat:", cfErr.message);
-      }
-    }
-  } catch (e) {
-    console.error("Error ManyChat etiqueta:", etiqueta, e.message);
-    // Fallback a CAPI directo si ManyChat falla
-    console.log("FALLBACK → CAPI directo por error ManyChat:", evento);
-    await mandarEventoMetaDirecto(evento, telefono, value, subscriberId, nombre);
-  }
+  console.log("CAPI DIRECTO:", evento, "tel:", telefono, "subscriber:", subscriberId);
+  await mandarEventoMetaDirecto(evento, telefono, value, subscriberId, nombre);
 }
 
 // FALLBACK: CAPI directo (se usa solo si ManyChat falla o no hay subscriber_id)

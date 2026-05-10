@@ -1,4 +1,4 @@
-xconst express = require("express");
+const express = require("express");
 const app = express();
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
@@ -161,8 +161,8 @@ Sigue este orden natural en la conversacion:
 4. Visita → ALERTA_VISITA_PENDIENTE
 Cada paso lleva al siguiente. NUNCA saltes pasos ni des todo junto.
 
-REGLA CRITICA - NO ALUCINAR INFORMACION ENVIADA:
-La informacion de arriba (precios, lotes, ubicacion) es TU conocimiento interno. El cliente NO la ha visto a menos que TU la hayas escrito en un mensaje anterior en esta conversacion. NUNCA digas "ya se los mande", "como le mencione", "arriba le puse" ni nada similar a menos que puedas ver que TU realmente escribiste esa informacion en tus mensajes anteriores del historial. Si el cliente pide algo que no le has dado, DASELO aunque tu ya lo "sepas".
+REGLA CRITICA - NUNCA REFERENCIAR MENSAJES ANTERIORES:
+NUNCA digas "ya le comparti", "como le mencione", "arriba le puse", "los precios que le mande", "ya se los di" ni NINGUNA variacion. Si el cliente pide algo, SIEMPRE daselo de nuevo completo aunque creas que ya se lo mandaste. El cliente puede no haberlo recibido. Es mejor repetir que decir "ya te lo mande" y que el cliente no lo tenga. SIEMPRE responde como si fuera la primera vez que te pide esa informacion.
 
 COMO RESPONDER:
 1. LEE el historial completo antes de responder. Revisa TUS mensajes anteriores para saber que ya le diste y que no.

@@ -118,7 +118,7 @@ MANEJO DE OBJECIONES:
 - "Esta muy lejos" o similar: "Estamos a solo 45 min de Monterrey por carretera, 5 min de Pueblo Salvaje y 3 min del Rio Blanquillo. La mayoria de nuestros clientes vienen de Monterrey."
 - "Esta caro" o "es mucho": "Entiendo. Para orientarme mejor, que presupuesto estaria manejando?"
 - "No tengo el enganche" o "no tengo para el enganche": "El plan de pagos es flexible, podemos ajustarlo a su situacion. Que monto de enganche le acomodaria?"
-- "Mandame mas informacion" o "mandame info" o "mandame algo": Responde con los precios de los 2 lotes (usando MAPA_DISPONIBILIDAD) + "Contamos con financiamiento directo sin intereses. Le gustaria conocer el plan de pagos?"
+- "Mandame mas informacion" o "mandame info" o "mandame algo": Responde con los precios de los 2 lotes (usando MAPA_DISPONIBILIDAD seguido inmediatamente del listado completo de Lote 1 y Lote 3B con precios) + "Contamos con financiamiento directo sin intereses. Le gustaria conocer el plan de pagos?"
 - "Se lo paso a mi esposa" o familiar o socio: "Con gusto, le comparto el folleto con toda la informacion para que lo revisen juntos." y escribe PDF_ENCINO al final.
 - "Vi otro proyecto" o competencia: "Privada Encino es el unico proyecto completamente pavimentado en la zona, con electricidad subterranea, acceso controlado y encinos dentro de los lotes. Que fue lo que mas le llamo la atencion del otro?"
 - Pregunta por vecinos o quienes han comprado: "Hemos recibido mucho interes de familias de Monterrey que buscan un lugar tranquilo cerca de la ciudad."
@@ -133,12 +133,15 @@ NADA MAS. Sin descripcion de distancias ni referencias. Solo esa frase y el link
 
 PRECIOS - MUY IMPORTANTE:
 Cuando el cliente pida precios Y vas a listar los 2 lotes, escribe MAPA_DISPONIBILIDAD en linea separada ANTES de la lista. SOLO escribe MAPA_DISPONIBILIDAD cuando vayas a poner la lista de precios inmediatamente despues. NUNCA lo escribas en el primer mensaje de presentacion ni cuando no vas a listar precios.
+MAPA_DISPONIBILIDAD nunca va solo. SIEMPRE va seguido inmediatamente del listado completo de Lote 1 y Lote 3B con precios. Si solo escribes el token sin la lista, la respuesta es invalida.
+MAPA_DISPONIBILIDAD y la lista de precios van SIEMPRE en el mismo bloque (despues del --- si hay presentacion previa). NUNCA separar el token del listado con ---.
 Formato de precios con ~ tachado y * negritas:
 "Estos son los 2 lotes disponibles:
 Lote 1 - 1,648 m2, ~$2,000,000~ hoy en *$1,700,000*
 Lote 3B - 1,700 m2, ~$2,100,000~ hoy en *$1,785,000*
 Contamos con financiamiento directo sin intereses."
 Despues de escribir ESA lista exacta de los 2 lotes con precios, SIEMPRE agrega --- y luego escribe: "Le gustaria conocer el plan de pagos? 💳" para que llegue como mensaje separado. SOLO agrega esa pregunta cuando acabas de escribir la lista completa de los 2 lotes. NUNCA en el saludo inicial, NUNCA en respuestas cortas, NUNCA cuando no mostraste la lista de precios. NUNCA EN NINGUNA PARTE DE LA CONVERSACION preguntes "cual le llama la atencion", "cual le interesa mas", "cual prefiere" ni ninguna variacion. El cliente NO ha visto los lotes fisicamente, no puede elegir entre ellos.
+NUNCA repitas "que le interesa mas" / "que informacion le interesa" / "que le gustaria conocer" una vez que ya enviaste cualquier bloque de informacion (ubicacion, precios, mapa, financiamiento). Avanza al siguiente paso del flujo.
 NUNCA des un rango generico como "van desde $1.7M hasta $1.8M". SIEMPRE detalla cada lote.
 No preguntes directamente si busca para inversion — deja que el cliente lo mencione.
 
@@ -155,6 +158,7 @@ NUNCA respondas con precios cuando pregunten por financiamiento. Son cosas difer
 
 ESCALAMIENTO - FLUJO NATURAL DE VENTA:
 Sigue este orden natural en la conversacion:
+0. Post-mapa → Si ya enviaste MAPA_DISPONIBILIDAD en un turno anterior, en el siguiente turno NUNCA preguntes que le interesa. El siguiente paso natural es "Le gustaria conocer el plan de pagos? 💳" si el cliente no lo ha visto, o avanzar a presupuesto/visita.
 1. Precios → la lista de precios termina con "Contamos con financiamiento directo sin intereses." y DESPUES en mensaje separado (usando ---): "Le gustaria conocer el plan de pagos? 💳"
 2. Financiamiento → termina con "Se le acomoda este plan?"
 3. Presupuesto OK → manda PDF_ENCINO y responde: "Le comparto el folleto con todo el detalle. Lo ideal es conocer el terreno en persona, tenemos disponibilidad sabados y domingos. Le gustaria visitarnos?"
@@ -163,6 +167,7 @@ Cada paso lleva al siguiente. NUNCA saltes pasos ni des todo junto.
 
 REGLA CRITICA - NUNCA REFERENCIAR MENSAJES ANTERIORES:
 NUNCA digas "ya le comparti", "como le mencione", "arriba le puse", "los precios que le mande", "ya se los di" ni NINGUNA variacion. Si el cliente pide algo, SIEMPRE daselo de nuevo completo aunque creas que ya se lo mandaste. El cliente puede no haberlo recibido. Es mejor repetir que decir "ya te lo mande" y que el cliente no lo tenga. SIEMPRE responde como si fuera la primera vez que te pide esa informacion.
+IMPORTANTE: Repetir aplica cuando el cliente PIDE algo de nuevo. Si el cliente solo afirma/acepta ("ok", "va", "si", "perfecto", "gracias"), avanza al siguiente paso del flujo de venta. NUNCA repitas la pregunta de que le interesa cuando el cliente solo esta aceptando o confirmando.
 
 COMO RESPONDER:
 1. LEE el historial completo antes de responder. Revisa TUS mensajes anteriores para saber que ya le diste y que no.
@@ -177,6 +182,7 @@ Si el cliente pide 1 cosa, responde esa cosa.
 Si el cliente pide 2 cosas (ej: "ubicacion y precios"), responde primero lo que NO son precios (ubicacion, amenidades, medidas, etc.) usando ---, y deja los precios con la pregunta de plan de pagos SIEMPRE AL FINAL. Los precios van siempre al ultimo cuando hay multiples temas.
 Si el cliente pide 3 o mas cosas a la vez, responde las 2 mas importantes separadas con --- (precios siempre al final) y pregunta por el resto.
 NUNCA ignores algo que el cliente pidio explicitamente.
+EXTENSION: Si tu mensaje anterior ofreció 2 o mas opciones (ej: "la ubicacion, los precios o el plan de financiamiento?") y el cliente responde con una afirmacion inclusiva (si, sí, todo, las 3, todos, ambos, los tres, claro, dale, ok, va, si me interesa, si por favor, las tres cosas), trata esa afirmacion como si el cliente hubiera pedido TODAS las opciones explicitamente. Aplica la misma regla de arriba para multiples temas.
 
 MENSAJES EN 2 PARTES:
 Usa --- SOLO cuando des un bloque grande de informacion (precios, ubicacion, financiamiento) Y ademas quieras hacer una pregunta. Para respuestas cortas conversacionales NUNCA uses ---. Ejemplo CORRECTO sin separar: "Claro, con gusto le escribo la proxima semana. Que dia le vendria mejor?"
@@ -184,7 +190,8 @@ Usa --- SOLO cuando des un bloque grande de informacion (precios, ubicacion, fin
 FLUJO:
 - DEFINICION DE MENSAJE GENERICO: cualquier primer mensaje que NO mencione una palabra clave especifica como "precios", "precio", "ubicacion", "financiamiento", "plan de pagos", "mensualidades", "enganche", "medidas", "lotes", "metros" o "escrituras". Ejemplos de mensajes genericos: "hola", "buenas", "info", "informacion", "quiero informacion", "quiero mas informacion", "me interesa Privada Encino", "quiero saber sobre el proyecto", "me pueden dar informacion", "hola quiero mas informacion sobre Privada Encino". TODOS estos son genericos porque NO especifican QUE informacion quieren.
 - Si el historial esta vacio Y el mensaje es GENERICO (segun la definicion de arriba): responde en 2 partes con ---. Primera parte: "Hola, soy Daniel Soliz, con gusto. Privada Encino es un proyecto campestre en Montemorelos NL, a 45 min de Monterrey. Contamos con los ultimos 2 lotes disponibles desde $1.7M con financiamiento directo sin intereses." Segunda parte: "Que le interesa conocer mas, la ubicacion, los precios o el plan de financiamiento?" NADA MAS despues de eso.
-- REGLA CRITICA - PRIMER MENSAJE CON CONTEXTO ESPECIFICO (OBLIGATORIA): Cuando el historial esta vacio Y el cliente pide algo ESPECIFICO en su primer mensaje (usa alguna palabra clave de la definicion de arriba), tu respuesta DEBE tener exactamente esta estructura: PARTE 1: "Hola, soy Daniel Soliz, con gusto. Le comparto [lo que pidio]:" NADA MAS. CERO contenido. CERO links. CERO precios. CERO datos. Solo el saludo y una frase corta que diga QUE le vas a compartir usando las mismas palabras del cliente. --- PARTE 2: El contenido real. Links, precios, datos, todo va aqui. Si NO incluye la lista de los 2 lotes con precios, termina con "¿Tiene alguna otra duda?" Si SI incluye precios, NO pongas esa pregunta. NUNCA juntes la parte 1 con la parte 2 en un solo bloque. El --- entre ambas es OBLIGATORIO. Ejemplos: Cliente dice "me pasas la ubicacion y precios" → PARTE1: "Hola, soy Daniel Soliz, con gusto. Le comparto la ubicacion y los precios:" --- PARTE2: link + MAPA_DISPONIBILIDAD + lotes. Cliente dice "quiero saber el financiamiento" → PARTE1: "Hola, soy Daniel Soliz, con gusto. Le comparto el plan de financiamiento:" --- PARTE2: plan de pagos + "¿Tiene alguna otra duda?" Cliente dice "ubicacion" → PARTE1: "Hola, soy Daniel Soliz, con gusto. Le comparto la ubicacion:" --- PARTE2: link + "¿Tiene alguna otra duda?"
+- REGLA INTERMEDIA - AFIRMACION GENERICA AL TURNO 2: Si tu mensaje anterior fue la pregunta de que le interesa (ubicacion/precios/financiamiento) y el cliente responde con una afirmacion generica (Si, si me interesa, todo, las 3, todos, ambos, los tres, claro, dale, ok, va, si por favor), entrega las 3 cosas en partes separadas con ---: ubicacion (link de Google Maps) --- MAPA_DISPONIBILIDAD con la lista completa de precios de los 2 lotes --- "Le gustaria conocer el plan de pagos? 💳". NUNCA repitas la pregunta de que le interesa.
+- REGLA CRITICA - PRIMER MENSAJE CON CONTEXTO ESPECIFICO (OBLIGATORIA): Cuando el historial esta vacio Y el cliente pide algo ESPECIFICO en su primer mensaje (usa alguna palabra clave de la definicion de arriba), tu respuesta DEBE tener exactamente esta estructura: PARTE 1: "Hola, soy Daniel Soliz, con gusto. Le comparto [lo que pidio]:" NADA MAS. CERO contenido. --- PARTE 2: El contenido real (links, precios, datos). NUNCA agregues preguntas finales de cierre como "Le gustaria conocer el plan de pagos?" o "Tiene alguna otra duda?" — el sistema las anexa automaticamente. NUNCA juntes la parte 1 con la parte 2 en un solo bloque. El --- entre ambas es OBLIGATORIO. Ejemplos: Cliente dice "me pasas la ubicacion y precios" → PARTE1: "Hola, soy Daniel Soliz, con gusto. Le comparto la ubicacion y los precios:" --- PARTE2: link + MAPA_DISPONIBILIDAD + lotes. Cliente dice "quiero saber el financiamiento" → PARTE1: "Hola, soy Daniel Soliz, con gusto. Le comparto el plan de financiamiento:" --- PARTE2: plan de pagos. Cliente dice "ubicacion" → PARTE1: "Hola, soy Daniel Soliz, con gusto. Le comparto la ubicacion:" --- PARTE2: link.
 - Si YA HAY mensajes previos en el historial: NUNCA te presentes de nuevo. Continua la conversacion respondiendo lo que el cliente pidio.
 - Objetivo: agendar visita sabado o domingo.
 
@@ -208,7 +215,7 @@ ALERTA_LEGAL: pregunta por temas legales o escrituras
 ALERTA_PRESUPUESTO_OK: cliente confirma que el financiamiento/precio le funciona
 ALERTA_PRESUPUESTO_BAJO: cliente dice que no le alcanza o su presupuesto es muy bajo
 ALERTA_SEGUIMIENTO:[detalle]: cliente pide que lo contactes despues
-MAPA_DISPONIBILIDAD: antes de mostrar precios, para que el cliente vea el mapa de lotes`;
+MAPA_DISPONIBILIDAD: antes de mostrar precios, para que el cliente vea el mapa de lotes. SIEMPRE debe ir seguido del listado completo de precios de Lote 1 y Lote 3B en el MISMO bloque. Nunca escribas solo MAPA_DISPONIBILIDAD sin la lista de precios.`;
 
 function hashSHA256(valor) {
   if (!valor) return null;
@@ -539,6 +546,107 @@ function backgroundTask(nombre, promesa) {
   promesa.catch(e => console.error("BG ERROR [" + nombre + "]:", e.message));
 }
 
+// Drena pendientes huerfanos: los procesa con Claude y le responde al cliente.
+// Usado por (a) PUNTO B al cierre de un ciclo, y (b) PUNTO A tras expirar cooldown.
+async function drainPendientesConClaude(clave, subscriber_id, telefono) {
+  if (!subscriber_id) return;
+  const lockKey = "lock:" + clave;
+  const drainId = "drain-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+
+  // Adquirir el lock principal para serializar con cualquier ejecucion activa.
+  // Si falla, esa ejecucion vera los pending en su paso 6 (ventana de acumulacion).
+  const got = await redis.set(lockKey, drainId, { nx: true, ex: 30 });
+  if (!got) {
+    console.log("DRAIN cede lock (hay ejecucion activa):", clave);
+    return;
+  }
+
+  try {
+    const raw = await redis.get("pending:" + clave);
+    if (!raw) return;
+
+    let msgs;
+    try { msgs = typeof raw === "string" ? JSON.parse(raw) : raw; } catch { msgs = null; }
+    if (!Array.isArray(msgs) || !msgs.length) {
+      await redis.del("pending:" + clave);
+      return;
+    }
+    // Apropiarse de los mensajes (otro drain/ciclo no debe volver a verlos)
+    await redis.del("pending:" + clave);
+    console.log("DRAIN con Claude:", clave, msgs.length, "msg(s)");
+
+    // Releer historial: el ciclo principal lo escribio hace milisegundos
+    const conv = await getConversacion(clave);
+    conv.push({ role: "user", content: msgs.join(" ") });
+
+    let respuestaLimpia = "";
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 30000);
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 800,
+          system: SYSTEM_PROMPT,
+          messages: conv
+        })
+      });
+      clearTimeout(tid);
+      if (!resp.ok) throw new Error("Claude HTTP " + resp.status);
+      const data = await resp.json();
+      const texto = (data.content && data.content[0] && data.content[0].text) || "";
+      respuestaLimpia = texto
+        .replace(/MAPA_DISPONIBILIDAD/g, "")
+        .replace(/PDF_ENCINO/g, "")
+        .replace(/ALERTA_[A-Z_]+:?[^\n]*/g, "")
+        .replace(/ETIQUETA:\S*/g, "")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      if (!respuestaLimpia) throw new Error("respuesta vacia tras limpieza");
+    } catch (e) {
+      console.error("DRAIN Claude FALLO:", e.message);
+      await mandarTelegram(
+        "DRAIN sin respuesta (Claude fallo)\n" +
+        "Cliente: " + (telefono || subscriber_id) + "\n" +
+        "Mensajes: " + msgs.join(" | ") + "\n" +
+        "Error: " + e.message
+      );
+      return;
+    }
+
+    try {
+      await mandarTexto(subscriber_id, respuestaLimpia);
+      conv.push({ role: "assistant", content: respuestaLimpia });
+      await setConversacion(clave, conv);
+    } catch (e) {
+      console.error("DRAIN envio/save FALLO:", e.message);
+      await mandarTelegram(
+        "DRAIN no entregado al cliente\n" +
+        "Cliente: " + (telefono || subscriber_id) + "\n" +
+        "Error: " + e.message
+      );
+    }
+  } finally {
+    // Liberar lock solo si sigue siendo nuestro
+    try {
+      const cur = await redis.get(lockKey);
+      if (cur === drainId) await redis.del(lockKey);
+    } catch (_) {}
+    // Cooldown post-respuesta para frenar retries inmediatos
+    try {
+      cooldownMemoria.set(clave, Date.now());
+      await redis.setex("cooldown:" + clave, 5, "true");
+    } catch (_) {}
+  }
+}
+
 app.post("/webhook", async (req, res) => {
   // FIX #3: Rechazar requests durante shutdown
   if (shuttingDown) {
@@ -548,33 +656,61 @@ app.post("/webhook", async (req, res) => {
   const requestId = Math.random().toString(36).slice(2, 8);
   activeRequests.add(requestId);
 
+  let dedupKey = null;
+
   try {
     const { telefono, mensaje, subscriber_id, primer_mensaje, nombre } = req.body;
     console.log("BODY COMPLETO:", JSON.stringify(req.body));
 
-    if (!mensaje || typeof mensaje !== 'string' || mensaje.length > 4000) {
+    if (!mensaje || typeof mensaje !== 'string' || !mensaje.trim() || mensaje.length > 4000) {
       activeRequests.delete(requestId);
       return res.status(400).json({ error: "Mensaje inválido" });
     }
 
-    const clave = subscriber_id || telefono || "desconocido";
+    if (!subscriber_id && !telefono) {
+      activeRequests.delete(requestId);
+      return res.status(400).json({ error: "Falta subscriber_id o telefono" });
+    }
+    const clave = subscriber_id || telefono;
     console.log("=== WEBHOOK ===", "clave:", clave, "subscriber_id:", subscriber_id, "telefono:", telefono, "mensaje:", mensaje);
 
     // ============================================================
-    // FIX: Cooldown ANTES del lock — bloquea retries de ManyChat
-    // sin gastar operaciones de Redis en el lock
+    // FIX: cooldown ya NO descarta. Acumula como pending y agenda drenado tardio.
+    // Los retries de ManyChat traen mismo texto y los filtramos por includes(mensaje).
+    // El dedup por hash que viene despues sigue cubriendo cualquier retry que pase.
     // ============================================================
-    const ahoritaCooldown = cooldownMemoria.get(clave);
-    if (ahoritaCooldown && Date.now() - ahoritaCooldown < 30000) {
-      console.log("BLOQUEADO (cooldown memoria):", clave);
-      activeRequests.delete(requestId);
-      return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
-    }
-
     const cooldownKey = "cooldown:" + clave;
-    const enCooldown = await redis.get(cooldownKey);
-    if (enCooldown) {
-      console.log("BLOQUEADO (cooldown redis):", clave);
+    const ahoritaCooldown = cooldownMemoria.get(clave);
+    const enCooldownMem = ahoritaCooldown && Date.now() - ahoritaCooldown < 5000;
+    const enCooldownRedis = enCooldownMem ? null : await redis.get(cooldownKey);
+
+    if (enCooldownMem || enCooldownRedis) {
+      console.log("EN COOLDOWN -> guardar pending:", clave, enCooldownMem ? "(mem)" : "(redis)");
+
+      const pendingKey = "pending:" + clave;
+      const existente = await redis.get(pendingKey);
+      let arr = [];
+      if (existente) {
+        try {
+          arr = typeof existente === "string" ? JSON.parse(existente) : existente;
+          if (!Array.isArray(arr)) arr = [];
+        } catch { arr = []; }
+      }
+      // Idempotencia frente a retries: mismo texto no se duplica
+      if (!arr.includes(mensaje)) {
+        arr.push(mensaje);
+        await redis.setex(pendingKey, 60, JSON.stringify(arr));
+      } else {
+        console.log("COOLDOWN: retry mismo texto, ya estaba en pending");
+      }
+
+      // Agenda drenado tras expirar cooldown. Multiples drains agendados son seguros:
+      // solo el primero toma el lock; los demas salen.
+      backgroundTask("late-drain-" + clave, (async () => {
+        await new Promise(r => setTimeout(r, 5500));
+        await drainPendientesConClaude(clave, subscriber_id, telefono);
+      })());
+
       activeRequests.delete(requestId);
       return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
     }
@@ -584,14 +720,13 @@ app.post("/webhook", async (req, res) => {
     // recientemente para este subscriber, ignorar (double tap)
     // ============================================================
     const msgHash = crypto.createHash("md5").update(clave + ":" + mensaje).digest("hex").slice(0, 12);
-    const dedupKey = "dedup:" + msgHash;
-    const yaProcesado = await redis.get(dedupKey);
-    if (yaProcesado) {
+    dedupKey = "dedup:" + msgHash;
+    const dedupOk = await redis.set(dedupKey, "1", { nx: true, ex: 90 });
+    if (!dedupOk) {
       console.log("BLOQUEADO (dedup mensaje):", clave, "mensaje ya procesado");
       activeRequests.delete(requestId);
       return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
     }
-    await redis.setex(dedupKey, 300, "true"); // 5 min dedup — cubre retries de ManyChat cada 3 min
 
     // ============================================================
     // Lock distribuido en Redis
@@ -617,10 +752,8 @@ app.post("/webhook", async (req, res) => {
     // Función para liberar el lock de forma segura
     async function releaseLock() {
       try {
-        const currentVal = await redis.get(lockKey);
-        if (currentVal === requestId) {
-          await redis.del(lockKey);
-        }
+        const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`;
+        await redis.eval(script, [lockKey], [requestId]);
       } catch (e) {
         console.error("Error releasing lock:", e);
       }
@@ -629,7 +762,7 @@ app.post("/webhook", async (req, res) => {
     // Helper: liberar lock + poner cooldown en todas las rutas de salida
     async function releaseConCooldown() {
       cooldownMemoria.set(clave, Date.now());
-      await redis.setex(cooldownKey, 30, "true");
+      await redis.setex(cooldownKey, 5, "true");
       await releaseLock();
     }
 
@@ -730,9 +863,35 @@ app.post("/webhook", async (req, res) => {
           content: contexto + " " + mensajeCompleto
         });
       } else if (conversacion.length > 0) {
+        // Construir contexto enriquecido inspeccionando historial
+        let contextoExtra = "";
+        
+        // BUG 3 FIX: Detectar qué activos ya se entregaron
+        const activosEntregados = [];
+        for (const msg of conversacion) {
+          if (msg.role === "assistant") {
+            if (msg.content.includes("[Mapa de disponibilidad enviado]") || msg.content.includes("$1,700,000") || /\$\s*1[.,]?7\d{2}[.,]?\d{3}/.test(msg.content)) activosEntregados.push("precios+mapa");
+            if (msg.content.includes("[PDF folleto enviado]")) activosEntregados.push("PDF folleto");
+            if (msg.content.includes("maps.app.goo.gl")) activosEntregados.push("ubicacion");
+            if (msg.content.includes("Manejamos financiamiento") || msg.content.includes("mensualidades")) activosEntregados.push("financiamiento");
+          }
+        }
+        if (activosEntregados.length > 0) {
+          contextoExtra += " [Ya entregaste: " + [...new Set(activosEntregados)].join(", ") + ". NO repitas la pregunta de que le interesa. Avanza al siguiente paso del flujo.]";
+        }
+        
+        // BUG 1 FIX: Detectar si el último mensaje del assistant fue la pregunta multi-opción
+        const ultimoAssistant = [...conversacion].reverse().find(m => m.role === "assistant");
+        if (ultimoAssistant && /qu[eé] le interesa/i.test(ultimoAssistant.content)) {
+          const afirmacionInclusiva = /^(s[ií]|todo|las\s*3|todos|ambos|los\s*tres|claro|dale|ok|va|s[ií]\s*(me\s+interesa|por\s+favor|claro|todo|las\s*3)|las\s*tres\s*cosas|s[ií]\s*,?\s*todo)[.,!?\s]*$/i;
+          if (afirmacionInclusiva.test(mensajeCompleto.trim())) {
+            contextoExtra += " [El cliente afirmo querer TODA la informacion ofrecida. Entrega ubicacion (link Google Maps) + MAPA_DISPONIBILIDAD con lista completa de precios + pregunta de plan de pagos. NO repitas la pregunta de que le interesa.]";
+          }
+        }
+        
         conversacion.push({
           role: "user",
-          content: "[Conversacion en curso, mensaje #" + (Math.floor(conversacion.length / 2) + 1) + " del cliente. NO te presentes de nuevo.] " + mensajeCompleto
+          content: "[Conversacion en curso, mensaje #" + (Math.floor(conversacion.length / 2) + 1) + " del cliente. NO te presentes de nuevo.]" + contextoExtra + " " + mensajeCompleto
         });
       } else {
         conversacion.push({ role: "user", content: mensajeCompleto });
@@ -785,49 +944,114 @@ app.post("/webhook", async (req, res) => {
       let respuesta = textBlocks.map(b => b.text).join("\n").trim();
       console.log("RESPUESTA:", respuesta);
 
-      conversacion.push({ role: "assistant", content: respuesta });
-      if (conversacion.length > 20) {
-        conversacion = conversacion.slice(-20);
-        if (conversacion[0].role === "assistant") conversacion = conversacion.slice(1);
+      // ============================================================
+      // VALIDADOR POST-RESPUESTA
+      // Tipo A: "referencia info ausente" → REGENERAR (la info falta)
+      // Tipo B: "preguntas de cierre malas" → LIMPIAR (el resto está bien)
+      // ============================================================
+      const referenciaAusente = [
+        /ya le (compart[ií]|envi[eé]|mand[eé]|puse|mencion[eé])/i,
+        /como le (mencion[eé]|dije|coment[eé]|expliqu[eé])/i,
+        /arriba le (puse|envi[eé]|compart[ií])/i,
+      ];
+      const preguntaMala = [
+        /cu[aá]l le llama la atenci[oó]n/i,
+        /cu[aá]l (prefiere|le gusta m[aá]s|le interesa m[aá]s)/i,
+      ];
+      // BUG 3 FIX: En turno 2+, también prohibir repetir la pregunta de bienvenida
+      if (conversacion.length > 2) {
+        preguntaMala.push(/qu[eé] le interesa (conocer )?m[aá]s/i);
+        preguntaMala.push(/qu[eé] (informaci[oó]n )?le (gustar[ií]a|interesa)/i);
+        preguntaMala.push(/qu[eé] le gustar[ií]a conocer/i);
       }
-      
-      await setConversacion(clave, conversacion);
 
-      if (conversacion.length >= 6) {
-        const icKey = "capi_ic:" + clave;
-        const icEnviado = await redis.get(icKey);
-        if (!icEnviado) {
-          await redis.setex(icKey, 2592000, "true");
-          backgroundTask("CAPI-InitiateCheckout", mandarEventoViaManyChat("InitiateCheckout", telefono || null, null, subscriber_id, nombre));
-          console.log("CAPI InitiateCheckout disparado para:", clave, "mensajes:", conversacion.length);
+      const refAusente = referenciaAusente.find(r => r.test(respuesta));
+      if (refAusente) {
+        console.log("VALIDADOR TIPO A: referencia info ausente, regenerando | clave:", clave);
+        backgroundTask("validador-regen-telegram", mandarTelegram("VALIDADOR: Claude referenció info no enviada\nCliente: " + (telefono || subscriber_id) + "\nRespuesta original: " + respuesta.substring(0, 200)));
+        // Regenerar con feedback explícito
+        try {
+          const convRetry = [...conversacion, {
+            role: "user",
+            content: "[SISTEMA: Tu respuesta anterior dijo 'ya le comparti' sin incluir la informacion real. Vuelve a redactar incluyendo TODOS los datos completos. NUNCA referenciar mensajes anteriores.]"
+          }];
+          const ctrlRetry = new AbortController();
+          const tRetry = setTimeout(() => ctrlRetry.abort(), 15000);
+          const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST", signal: ctrlRetry.signal,
+            headers: { "Content-Type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 800, system: SYSTEM_PROMPT, messages: convRetry })
+          });
+          clearTimeout(tRetry);
+          const retryData = await retryRes.json();
+          if (retryRes.ok && retryData.content) {
+            const retryBlocks = retryData.content.filter(b => b.type === "text");
+            if (retryBlocks.length) {
+              respuesta = retryBlocks.map(b => b.text).join("\n").trim();
+              console.log("RESPUESTA REGENERADA:", respuesta);
+            }
+          }
+        } catch (retryErr) {
+          console.error("Error regenerando respuesta:", retryErr.message);
+        }
+        // Si sigue con referencia ausente, devolver null
+        if (referenciaAusente.some(r => r.test(respuesta))) {
+          console.log("VALIDADOR: regeneración falló | clave:", clave);
+          backgroundTask("validador-falla-telegram", mandarTelegram("VALIDADOR fallback\nCliente: " + (telefono || subscriber_id) + "\nMensaje: " + mensaje));
+          await releaseConCooldown();
+          activeRequests.delete(requestId);
+          return res.json({ respuesta1: "Permítame un momento, le confirmo enseguida.", respuesta2: null, alerta: null, foto: false });
         }
       }
 
+      // Tipo B: preguntas de cierre malas — solo limpiar
+      const pregMala = preguntaMala.find(r => r.test(respuesta));
+      if (pregMala) {
+        console.log("VALIDADOR TIPO B: pregunta mala limpiada | clave:", clave);
+        respuesta = respuesta.replace(/cu[aá]l le llama la atenci[oó]n[^.!?\n]*/gi, "")
+          .replace(/cu[aá]l (prefiere|le gusta m[aá]s|le interesa m[aá]s)[^.!?\n]*/gi, "")
+          .replace(/qu[eé] le interesa (conocer )?m[aá]s[^.!?\n]*/gi, "")
+          .replace(/qu[eé] (informaci[oó]n )?le (gustar[ií]a|interesa)[^.!?\n]*/gi, "")
+          .replace(/qu[eé] le gustar[ií]a conocer[^.!?\n]*/gi, "")
+          .replace(/\n{2,}/g, "\n").trim();
+      }
+
+      // ============================================================
+      // BUG 2 FIX: Mover TODA la limpieza de tokens ANTES del validador
+      // de respuestas basura, para que la validación se haga sobre
+      // el texto limpio (sin MAPA_DISPONIBILIDAD, PDF_ENCINO, etc.)
+      // ============================================================
       let alerta = null;
       let foto = false;
+      let enviarMapa = false;
+      let enviarPDF = false;
 
       respuesta = respuesta.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
 
+      // BUG 2 FIX: Detectar y strippear MAPA_DISPONIBILIDAD + guard de precios
       if (respuesta.includes("MAPA_DISPONIBILIDAD")) {
-        respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
-        if (subscriber_id) {
-          await mandarContenido(subscriber_id, CONTENT_MAPA);
-          console.log("MAPA enviado antes del texto:", subscriber_id);
+        // Guard: si tiene MAPA_DISPONIBILIDAD pero NO tiene precios, inyectar bloque canónico
+        const tieneAlgunPrecio = /\$\s*1[.,]?7\d{2}[.,]?\d{3}/.test(respuesta);
+        if (!tieneAlgunPrecio) {
+          console.log("GUARD: MAPA_DISPONIBILIDAD sin precios, inyectando bloque canónico | clave:", clave);
+          respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
+          const bloquePreciosCanonicos = "Estos son los 2 lotes disponibles:\nLote 1 - 1,648 m2, ~$2,000,000~ hoy en *$1,700,000*\nLote 3B - 1,700 m2, ~$2,100,000~ hoy en *$1,785,000*\nContamos con financiamiento directo sin intereses.";
+          respuesta = respuesta ? respuesta + "\n" + bloquePreciosCanonicos : bloquePreciosCanonicos;
+        } else {
+          respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
         }
+        if (subscriber_id) enviarMapa = true;
       }
 
       if (respuesta.includes("PDF_ENCINO")) {
         respuesta = respuesta.replace(/PDF_ENCINO/g, "").trim();
-        if (subscriber_id) {
-          await mandarContenido(subscriber_id, CONTENT_PDF);
-          console.log("PDF enviado antes del texto:", telefono || subscriber_id);
-        }
+        if (subscriber_id) enviarPDF = true;
       }
 
       if (respuesta.includes("ALERTA_VISITA_PENDIENTE")) {
-        const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:(.+)/);
+        const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:?\s*(.*)/);
         alerta = "ALERTA_VISITA_PENDIENTE";
-        respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:.+/g, "").trim();
+        respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:?.*$/gm, "").trim();
         const detalle = match ? match[1] : "";
         backgroundTask("visita-telegram", mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar"));
         backgroundTask("visita-save", guardarVisita(clave, detalle));
@@ -841,16 +1065,16 @@ app.post("/webhook", async (req, res) => {
         if (subscriber_id) backgroundTask("visita-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
 
       } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
-        const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:(.+)/);
+        const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:?\s*(.*)/);
         alerta = "ALERTA_VISITA_CONFIRMADA";
-        respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:.+/g, "").trim();
+        respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:?.*$/gm, "").trim();
         backgroundTask("confirmada-telegram", mandarTelegram("VISITA CONFIRMADA\n" + (match ? match[1] : telefono)));
         if (subscriber_id) backgroundTask("confirmada-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
 
       } else if (respuesta.includes("ALERTA_VISITA_OTRO_DIA")) {
-        const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:(.+)/);
+        const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:?\s*(.*)/);
         alerta = "ALERTA_VISITA_OTRO_DIA";
-        respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:.+/g, "").trim();
+        respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:?.*$/gm, "").trim();
         backgroundTask("otroDia-telegram", mandarTelegram("Visita otro dia\nCliente: " + (telefono || subscriber_id) + "\nDia: " + (match ? match[1] : "")));
 
       } else if (respuesta.includes("ALERTA_AUDIO")) {
@@ -882,9 +1106,9 @@ app.post("/webhook", async (req, res) => {
         respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_BAJO/g, "").trim();
 
       } else if (respuesta.includes("ALERTA_SEGUIMIENTO")) {
-        const match = respuesta.match(/ALERTA_SEGUIMIENTO:(.+)/);
+        const match = respuesta.match(/ALERTA_SEGUIMIENTO:?\s*(.*)/);
         alerta = "ALERTA_SEGUIMIENTO";
-        respuesta = respuesta.replace(/ALERTA_SEGUIMIENTO:.+/g, "").trim();
+        respuesta = respuesta.replace(/ALERTA_SEGUIMIENTO:?.*$/gm, "").trim();
         const detalle = match ? match[1] : "";
         backgroundTask("seguimiento-telegram", mandarTelegram("SEGUIMIENTO\nCliente: " + (telefono || subscriber_id) + "\nPide contacto: " + detalle));
 
@@ -904,8 +1128,30 @@ app.post("/webhook", async (req, res) => {
         respuesta = respuesta.replace(/ALERTA_PDF_ENVIADO/g, "").trim();
       }
 
-      const PREG_FINANC = "\u00bfLe gustar\u00eda conocer el plan de financiamiento? \uD83D\uDCB3";
-      const PREG_PLAN   = "\u00bfQu\u00e9 le parece este plan?";
+      // BUG 2 FIX: Guard final de respuestas basura DESPUÉS de limpiar tokens
+      const limpia = respuesta.trim();
+      const empiezaMal = /^[,;:.\s]|^(y |pero |son |está |los |las )/i.test(limpia);
+      const esSoloEmoji = /^[\p{Extended_Pictographic}\s]+$/u.test(limpia);
+      const muyCorta = !esSoloEmoji && limpia.length < 10;
+      if (empiezaMal || muyCorta || !limpia) {
+        console.log("VALIDADOR: respuesta basura detectada, devolviendo null | clave:", clave);
+        await releaseConCooldown();
+        activeRequests.delete(requestId);
+        return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
+      }
+
+      if (conversacion.length >= 5) {
+        const icKey = "capi_ic:" + clave;
+        const icEnviado = await redis.get(icKey);
+        if (!icEnviado) {
+          await redis.setex(icKey, 2592000, "true");
+          backgroundTask("CAPI-InitiateCheckout", mandarEventoViaManyChat("InitiateCheckout", telefono || null, null, subscriber_id, nombre));
+          console.log("CAPI InitiateCheckout disparado para:", clave, "mensajes:", conversacion.length);
+        }
+      }
+
+      const PREG_FINANC = "\u00bfLe gustar\u00eda conocer el plan de pagos? \uD83D\uDCB3";
+      const PREG_PLAN   = "\u00bfSe le acomoda este plan?";
 
       const partes = respuesta.split("---");
       let respuesta1 = partes[0].trim();
@@ -926,9 +1172,12 @@ app.post("/webhook", async (req, res) => {
           .replace(/^\n+/, "").trim();
       }
 
-      const tienePrecios = respuesta.includes("$1,700,000") || respuesta.includes("$1,785,000");
+      // EXTRA FIX: Regex más laxo para detectar precios (cubre $1.700.000, $1,700,000 MXN, etc.)
+      const regexPrecio1 = /\$\s*1[.,]?7[0O]0[.,]?\d{3}/i;
+      const regexPrecio2 = /\$\s*1[.,]?78[5S][.,]?\d{3}/i;
+      const tienePrecios = regexPrecio1.test(respuesta) || regexPrecio2.test(respuesta);
       if (tienePrecios) {
-        const idxP = partes.findIndex(p => p.includes("$1,700,000") || p.includes("$1,785,000"));
+        const idxP = partes.findIndex(p => regexPrecio1.test(p) || regexPrecio2.test(p));
         const idx  = idxP >= 0 ? idxP : 0;
         if (idx === 0) {
           respuesta1 = formatearPrecios(partes[0]);
@@ -940,9 +1189,9 @@ app.post("/webhook", async (req, res) => {
         console.log("PRECIOS OK r1:", respuesta1.length, "r2:", respuesta2);
       }
 
-      const tieneFinanciamiento = !tienePrecios && (respuesta.includes("Manejamos financiamiento") || respuesta.includes("mensualidades de"));
+      const tieneFinanciamiento = !tienePrecios && (respuesta.includes("Manejamos financiamiento") || /mensualidades\s+(de|desde)/i.test(respuesta));
       if (tieneFinanciamiento) {
-        const idxF   = partes.findIndex(p => p.includes("Manejamos financiamiento") || p.includes("mensualidades de"));
+        const idxF   = partes.findIndex(p => p.includes("Manejamos financiamiento") || /mensualidades\s+(de|desde)/i.test(p));
         const idxFin = idxF >= 0 ? idxF : 0;
         if (idxFin === 0) {
           respuesta1 = sinPreguntas(partes[0], "plan");
@@ -956,19 +1205,52 @@ app.post("/webhook", async (req, res) => {
 
       console.log("FINAL r1:", respuesta1 ? respuesta1.substring(0,50) : "VACIA", "| r2:", respuesta2 || "null");
 
+      // BUG 3 FIX: guardar en historial lo que REALMENTE se envió + marcar activos entregados
+      let textoEnviado = (respuesta1 || "") + (respuesta2 ? "\n" + respuesta2 : "");
+      if (enviarMapa) textoEnviado += "\n[Mapa de disponibilidad enviado al cliente]";
+      if (enviarPDF) textoEnviado += "\n[PDF folleto enviado al cliente]";
+      conversacion.push({ role: "assistant", content: textoEnviado });
+      if (conversacion.length > 20) {
+        conversacion = conversacion.slice(-20);
+        if (conversacion[0].role === "assistant") conversacion = conversacion.slice(1);
+      }
+      await setConversacion(clave, conversacion);
+
+      // Fix #6 actualizado: drenar pendientes huerfanos PROCESANDO con Claude
+      // (no solo alerta a Telegram). El delay deja al ciclo principal liberar su
+      // lock via releaseConCooldown antes de que el drain intente tomarlo.
+      backgroundTask("pending-drain", (async () => {
+        await new Promise(r => setTimeout(r, 300));
+        await drainPendientesConClaude(clave, subscriber_id, telefono);
+      })());
+
       await releaseConCooldown();
       activeRequests.delete(requestId);
-      return res.json({ respuesta1, respuesta2, alerta, foto: false });
+      
+      // BUG 2 FIX: Enviar res.json PRIMERO, luego mapa/PDF en background
+      // Esto evita que sendFlow de ManyChat bloquee/interrumpa la respuesta del webhook
+      res.json({ respuesta1, respuesta2, alerta, foto: false });
+      
+      // Mapa y PDF se envían DESPUÉS del res.json para que ManyChat procese
+      // primero la respuesta del webhook y luego la inyección de contenido
+      if (enviarMapa) {
+        backgroundTask("mapa-envio", mandarContenido(subscriber_id, CONTENT_MAPA));
+        console.log("MAPA programado en background para:", subscriber_id);
+      }
+      if (enviarPDF) {
+        backgroundTask("pdf-envio", mandarContenido(subscriber_id, CONTENT_PDF));
+        console.log("PDF programado en background para:", subscriber_id);
+      }
+      return;
 
     } catch (error) {
       console.error("Error webhook procesamiento:", error);
       try {
         cooldownMemoria.set(clave, Date.now());
-        await redis.setex(cooldownKey, 30, "true");
-        const currentVal = await redis.get("lock:" + clave);
-        if (currentVal === requestId) {
-          await redis.del("lock:" + clave);
-        }
+        await redis.setex(cooldownKey, 5, "true");
+        if (dedupKey) await redis.del(dedupKey);
+        const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`;
+        await redis.eval(script, ["lock:" + clave], [requestId]);
       } catch (e) { /* ignore */ }
       activeRequests.delete(requestId);
       if (!res.headersSent) {
@@ -978,6 +1260,7 @@ app.post("/webhook", async (req, res) => {
 
   } catch (error) {
     console.error("Error webhook:", error);
+    if (dedupKey) { try { await redis.del(dedupKey); } catch(e){} }
     activeRequests.delete(requestId);
     if (!res.headersSent) {
       res.status(500).json({ error: "Error interno" });
@@ -1175,10 +1458,10 @@ app.get("/estado/:clave", async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.json({ status: "Agente Daniel - Privada Encino v3.7 funcionando" });
+  res.json({ status: "Agente Daniel - Privada Encino v3.8 funcionando" });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, function () {
-  console.log("Servidor Daniel v3.7 corriendo en puerto " + PORT);
+  console.log("Servidor Daniel v3.8 corriendo en puerto " + PORT);
 });

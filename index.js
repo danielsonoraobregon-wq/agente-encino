@@ -21,6 +21,10 @@ const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL;
 const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const TELEGRAM_CHAT_ID_ANGEL = process.env.TELEGRAM_CHAT_ID_ANGEL;
 
+// FIX #19: Daniel detection via env vars (subscriber_id NO es teléfono)
+const DANIEL_TELEFONO = process.env.DANIEL_TELEFONO || "5218123793904";
+const DANIEL_SUBSCRIBER_ID = process.env.DANIEL_SUBSCRIBER_ID || "";
+
 const CONTENT_VIDEOS = "content20260416013522_274702";
 const CONTENT_PDF = "content20260416014533_080509";
 const CONTENT_MAPA = "content20260416180826_242262";
@@ -32,7 +36,6 @@ const redis = new Redis({
 
 const cooldownMemoria = new Map();
 
-// FIX: Limpiar cooldownMemoria cada 10 min para evitar memory leak
 setInterval(() => {
   const ahora = Date.now();
   for (const [clave, timestamp] of cooldownMemoria) {
@@ -41,7 +44,7 @@ setInterval(() => {
 }, 600000);
 
 // ============================================================
-// FIX #3: GRACEFUL SHUTDOWN — manejar SIGTERM correctamente
+// GRACEFUL SHUTDOWN
 // ============================================================
 let shuttingDown = false;
 const activeRequests = new Set();
@@ -49,30 +52,19 @@ const activeRequests = new Set();
 function gracefulShutdown(signal) {
   console.log(`Recibido ${signal}, cerrando gracefully...`);
   shuttingDown = true;
-  
-  // Dar 5 segundos para que terminen requests activas
   const forceExit = setTimeout(() => {
     console.log("Forzando cierre después de 5s");
     process.exit(0);
   }, 5000);
   forceExit.unref();
-  
-  // Si no hay requests activas, salir de inmediato
-  if (activeRequests.size === 0) {
-    console.log("Sin requests activas, cerrando ya");
-    process.exit(0);
-  }
-  
-  // Esperar a que terminen las requests activas
+  if (activeRequests.size === 0) { process.exit(0); }
   const checkInterval = setInterval(() => {
     if (activeRequests.size === 0) {
-      console.log("Requests activas terminaron, cerrando");
       clearInterval(checkInterval);
       process.exit(0);
     }
   }, 200);
 }
-
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
@@ -257,7 +249,6 @@ async function setConversacion(clave, mensajes) {
     const key = "conv:" + clave;
     await redis.setex(key, 86400, JSON.stringify(mensajes));
     console.log("REDIS SAVE OK:", key, "mensajes:", mensajes.length);
-    // FIX: Eliminado el re-read de verificación — gasta tiempo y no aporta
   } catch (e) {
     console.error("REDIS SAVE ERROR:", clave, e.message);
   }
@@ -302,7 +293,6 @@ async function guardarVisita(clave, detalle) {
   }
 }
 
-// FIX: Wrapper con timeout para todas las llamadas externas
 async function fetchConTimeout(url, opts, ms = 8000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -369,15 +359,15 @@ async function mandarContenido(subscriberId, contentNs) {
 }
 
 // ============================================================
-// MANDAR TEXTO — envia mensaje de texto via API de ManyChat
-// Se usa para mandar la respuesta de Claude en background
-// despues de haber respondido el webhook inmediatamente
+// MANDAR TEXTO — FIX #12: detectar fallos (24h WhatsApp expirada,
+// API caída) y alertar por Telegram para que un humano intervenga.
+// Devuelve true si entregó, false si falló (para que el caller sepa).
 // ============================================================
-async function mandarTexto(subscriberId, texto) {
+async function mandarTexto(subscriberId, texto, telefonoParaAlerta = null) {
   try {
     if (!subscriberId || !texto) {
       console.error("mandarTexto: falta subscriberId o texto");
-      return;
+      return false;
     }
     const response = await fetchConTimeout("https://api.manychat.com/fb/sending/sendContent", {
       method: "POST",
@@ -396,18 +386,30 @@ async function mandarTexto(subscriberId, texto) {
     console.log("MANYCHAT TEXTO:", data.status, "→", texto.substring(0, 60));
     if (data.status !== "success") {
       console.error("MANYCHAT TEXTO ERROR:", JSON.stringify(data));
+      // FIX #12: alerta clara cuando no se pudo entregar (ventana 24h, etc.)
+      backgroundTask("texto-fallido-telegram", mandarTelegram(
+        "MENSAJE NO ENTREGADO (ManyChat API falló)\n" +
+        "Cliente: " + (telefonoParaAlerta || subscriberId) + "\n" +
+        "Posible causa: ventana de 24h cerrada, subscriber bloqueó, o API caída.\n" +
+        "Texto: " + texto.substring(0, 200) + "\n" +
+        "Status: " + (data.status || "desconocido") + "\n" +
+        "Error: " + (data.message || JSON.stringify(data).substring(0, 300))
+      ));
+      return false;
     }
+    return true;
   } catch (e) {
     console.error("Error mandarTexto:", e.message);
+    backgroundTask("texto-excepcion-telegram", mandarTelegram(
+      "MENSAJE NO ENTREGADO (excepción)\n" +
+      "Cliente: " + (telefonoParaAlerta || subscriberId) + "\n" +
+      "Texto: " + texto.substring(0, 200) + "\n" +
+      "Error: " + e.message
+    ));
+    return false;
   }
 }
 
-// ============================================================
-// MAPEO DE EVENTOS CAPI → ETIQUETAS MANYCHAT
-// Cada evento que antes se enviaba directo a Facebook CAPI
-// ahora se convierte en una etiqueta en ManyChat.
-// ManyChat detecta la etiqueta y dispara el evento de Facebook.
-// ============================================================
 const EVENTO_A_ETIQUETA = {
   "ViewContent":          "capi_view_content",
   "InitiateCheckout":     "capi_initiate_checkout",
@@ -416,13 +418,11 @@ const EVENTO_A_ETIQUETA = {
   "Purchase":             "capi_purchase"
 };
 
-// CAPI DIRECTO: Railway → Facebook (sin pasar por ManyChat)
 async function mandarEventoViaManyChat(evento, telefono, value, subscriberId, nombre) {
   console.log("CAPI DIRECTO:", evento, "tel:", telefono, "subscriber:", subscriberId);
   await mandarEventoMetaDirecto(evento, telefono, value, subscriberId, nombre);
 }
 
-// FALLBACK: CAPI directo (se usa solo si ManyChat falla o no hay subscriber_id)
 async function mandarEventoMetaDirecto(evento, telefono, value, subscriberId, nombre) {
   try {
     const telefonoLimpio = limpiarTelefono(telefono);
@@ -455,7 +455,7 @@ async function mandarEventoMetaDirecto(evento, telefono, value, subscriberId, no
       body: JSON.stringify({ data: [eventoData], access_token: META_ACCESS_TOKEN })
     });
     const metaData = await metaRes.json();
-    console.log("META CAPI DIRECTO (fallback):", evento, "tel:", telefonoLimpio);
+    console.log("META CAPI DIRECTO:", evento, "tel:", telefonoLimpio);
     console.log("META CAPI RESPUESTA:", JSON.stringify(metaData));
   } catch (e) {
     console.error("Error Meta directo:", e);
@@ -539,22 +539,165 @@ setInterval(() => {
   }
 }, 300000);
 
-// ============================================================
-// FIX #4: Tareas background — fire-and-forget con logging
-// ============================================================
 function backgroundTask(nombre, promesa) {
   promesa.catch(e => console.error("BG ERROR [" + nombre + "]:", e.message));
 }
 
-// Drena pendientes huerfanos: los procesa con Claude y le responde al cliente.
-// Usado por (a) PUNTO B al cierre de un ciclo, y (b) PUNTO A tras expirar cooldown.
-async function drainPendientesConClaude(clave, subscriber_id, telefono) {
+// ============================================================
+// FIX #1, #2, #20: procesarRespuestaClaude — helper unificado
+// que detecta y procesa TODOS los tokens (MAPA, PDF, ALERTA_*),
+// ejecuta sus side-effects (Telegram, congelar, CAPI, etiquetas)
+// y devuelve el texto limpio + flags. Usado por el webhook
+// principal y por el late-drain.
+// ============================================================
+async function procesarRespuestaClaude(respuesta, ctx) {
+  // ctx: { clave, subscriber_id, telefono, mensaje, nombre }
+  let texto = respuesta || "";
+  let enviarMapa = false;
+  let enviarPDF = false;
+  let alerta = null;
+
+  // ETIQUETA arbitraria
+  texto = texto.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
+
+  // ----- MAPA_DISPONIBILIDAD (con FIX #14: guard inteligente) -----
+  if (texto.includes("MAPA_DISPONIBILIDAD")) {
+    const tieneAlgunPrecio = /\$\s*1[.,]?7\d{2}[.,]?\d{3}/.test(texto);
+    // FIX #14: solo inyectar precios si el contexto sugiere que Claude
+    // pretendía hablar de precios (no en saludos, planes de pago, etc.)
+    const esContextoPrecios = /\blotes?\s*[13]b?\b/i.test(texto) ||
+                              /\bprecios?\b/i.test(texto) ||
+                              /\bdisponibles?\b/i.test(texto) ||
+                              /\b\d{1,2}[,.]?\d{3}\s*m2\b/i.test(texto);
+    const esContextoFinanciamiento = /manejamos financiamiento|mensualidades|enganche\s*\$/i.test(texto);
+    const esContextoSaludo = /soy daniel soliz|hola[,.\s]/i.test(texto) && texto.length < 300;
+
+    if (!tieneAlgunPrecio && esContextoPrecios && !esContextoFinanciamiento && !esContextoSaludo) {
+      console.log("GUARD MAPA: contexto-precios sin lista, inyectando canónico | clave:", ctx.clave);
+      texto = texto.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
+      const canonico = "Estos son los 2 lotes disponibles:\nLote 1 - 1,648 m2, ~$2,000,000~ hoy en *$1,700,000*\nLote 3B - 1,700 m2, ~$2,100,000~ hoy en *$1,785,000*\nContamos con financiamiento directo sin intereses.";
+      texto = texto ? texto + "\n" + canonico : canonico;
+      if (ctx.subscriber_id) enviarMapa = true;
+    } else if (!tieneAlgunPrecio) {
+      console.log("GUARD MAPA: token mal puesto (saludo/financ), solo strip — NO mapa | clave:", ctx.clave);
+      texto = texto.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
+      backgroundTask("mapa-mal-puesto", mandarTelegram(
+        "MAPA_DISPONIBILIDAD mal puesto por Claude (sin lista de precios y sin contexto correcto)\n" +
+        "Cliente: " + (ctx.telefono || ctx.subscriber_id) + "\n" +
+        "Mensaje cliente: " + (ctx.mensaje || "") + "\n" +
+        "Strippeado sin enviar mapa."
+      ));
+    } else {
+      texto = texto.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
+      if (ctx.subscriber_id) enviarMapa = true;
+    }
+  }
+
+  // ----- PDF_ENCINO -----
+  if (texto.includes("PDF_ENCINO")) {
+    texto = texto.replace(/PDF_ENCINO/g, "").trim();
+    if (ctx.subscriber_id) enviarPDF = true;
+  }
+
+  // ----- ALERTA_* (con todos los side-effects) -----
+  if (texto.includes("ALERTA_VISITA_PENDIENTE")) {
+    const match = texto.match(/ALERTA_VISITA_PENDIENTE:?\s*(.*)/);
+    alerta = "ALERTA_VISITA_PENDIENTE";
+    texto = texto.replace(/ALERTA_VISITA_PENDIENTE:?.*$/gm, "").trim();
+    const detalle = match ? match[1] : "";
+    backgroundTask("visita-telegram", mandarTelegram("VISITA PENDIENTE\nCliente: " + (ctx.telefono || ctx.subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar"));
+    backgroundTask("visita-save", guardarVisita(ctx.clave, detalle));
+    backgroundTask("visita-congelar", setBotCongelado(ctx.clave, true));
+    const schedKey = "capi_sched:" + ctx.clave;
+    const schedEnviado = await redis.get(schedKey);
+    if (!schedEnviado) {
+      await redis.setex(schedKey, 2592000, "true");
+      backgroundTask("visita-capi", mandarEventoViaManyChat("Schedule", ctx.telefono || null, null, ctx.subscriber_id, ctx.nombre));
+    }
+    if (ctx.subscriber_id) backgroundTask("visita-etiqueta", ponerEtiqueta(ctx.subscriber_id, "cita privada encino"));
+
+  } else if (texto.includes("ALERTA_VISITA_CONFIRMADA")) {
+    const match = texto.match(/ALERTA_VISITA_CONFIRMADA:?\s*(.*)/);
+    alerta = "ALERTA_VISITA_CONFIRMADA";
+    texto = texto.replace(/ALERTA_VISITA_CONFIRMADA:?.*$/gm, "").trim();
+    backgroundTask("confirmada-telegram", mandarTelegram("VISITA CONFIRMADA\n" + (match ? match[1] : ctx.telefono)));
+    if (ctx.subscriber_id) backgroundTask("confirmada-etiqueta", ponerEtiqueta(ctx.subscriber_id, "cita privada encino"));
+
+  } else if (texto.includes("ALERTA_VISITA_OTRO_DIA")) {
+    const match = texto.match(/ALERTA_VISITA_OTRO_DIA:?\s*(.*)/);
+    alerta = "ALERTA_VISITA_OTRO_DIA";
+    texto = texto.replace(/ALERTA_VISITA_OTRO_DIA:?.*$/gm, "").trim();
+    backgroundTask("otroDia-telegram", mandarTelegram("Visita otro dia\nCliente: " + (ctx.telefono || ctx.subscriber_id) + "\nDia: " + (match ? match[1] : "")));
+
+  } else if (texto.includes("ALERTA_AUDIO")) {
+    alerta = "ALERTA_AUDIO";
+    texto = texto.replace(/ALERTA_AUDIO/g, "").trim();
+    backgroundTask("audio-congelar", setBotCongelado(ctx.clave, true));
+
+  } else if (texto.includes("ALERTA_LEGAL")) {
+    alerta = "ALERTA_LEGAL";
+    texto = texto.replace(/ALERTA_LEGAL/g, "").trim();
+
+  } else if (texto.includes("ALERTA_NO_SABE")) {
+    alerta = "ALERTA_NO_SABE";
+    texto = texto.replace(/ALERTA_NO_SABE/g, "").trim();
+    backgroundTask("noSabe-telegram", mandarTelegram("No sabe responder\nCliente: " + (ctx.telefono || ctx.subscriber_id) + "\nPregunta: " + (ctx.mensaje || "")));
+
+  } else if (texto.includes("ALERTA_PRESUPUESTO_OK")) {
+    alerta = "ALERTA_PRESUPUESTO_OK";
+    texto = texto.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
+    // FIX #20: presupuesto OK SIEMPRE debe mandar el PDF aunque Claude se olvide
+    if (ctx.subscriber_id) enviarPDF = true;
+    const crKey = "capi_cr:" + ctx.clave;
+    const crEnviado = await redis.get(crKey);
+    if (!crEnviado) {
+      await redis.setex(crKey, 2592000, "true");
+      backgroundTask("presupuesto-capi", mandarEventoViaManyChat("CompleteRegistration", ctx.telefono || null, null, ctx.subscriber_id, ctx.nombre));
+    }
+
+  } else if (texto.includes("ALERTA_PRESUPUESTO_BAJO")) {
+    alerta = "ALERTA_PRESUPUESTO_BAJO";
+    texto = texto.replace(/ALERTA_PRESUPUESTO_BAJO/g, "").trim();
+
+  } else if (texto.includes("ALERTA_SEGUIMIENTO")) {
+    const match = texto.match(/ALERTA_SEGUIMIENTO:?\s*(.*)/);
+    alerta = "ALERTA_SEGUIMIENTO";
+    texto = texto.replace(/ALERTA_SEGUIMIENTO:?.*$/gm, "").trim();
+    const detalle = match ? match[1] : "";
+    backgroundTask("seguimiento-telegram", mandarTelegram("SEGUIMIENTO\nCliente: " + (ctx.telefono || ctx.subscriber_id) + "\nPide contacto: " + detalle));
+
+  } else if (texto.includes("ALERTA_CIERRE_VENTA")) {
+    alerta = "ALERTA_CIERRE_VENTA";
+    texto = texto.replace(/ALERTA_CIERRE_VENTA/g, "").trim();
+    const purchKey = "capi_purch:" + ctx.clave;
+    const purchEnviado = await redis.get(purchKey);
+    if (!purchEnviado) {
+      await redis.setex(purchKey, 2592000, "true");
+      backgroundTask("cierre-capi", mandarEventoViaManyChat("Purchase", ctx.telefono || null, 1700000, ctx.subscriber_id, ctx.nombre));
+    }
+    backgroundTask("cierre-telegram", mandarTelegram("CIERRE DE VENTA\nCliente: " + (ctx.telefono || ctx.subscriber_id)));
+  }
+
+  if (texto.includes("ALERTA_PDF_ENVIADO")) {
+    texto = texto.replace(/ALERTA_PDF_ENVIADO/g, "").trim();
+  }
+
+  // Limpieza final por si quedó alguna alerta sin contemplar
+  texto = texto.replace(/ALERTA_[A-Z_]+:?[^\n]*/g, "").replace(/\n{3,}/g, "\n\n").trim();
+
+  return { texto, enviarMapa, enviarPDF, alerta };
+}
+
+// ============================================================
+// FIX #1, #2: drainPendientesConClaude — ahora procesa tokens
+// completos (MAPA, PDF, ALERTAS) usando procesarRespuestaClaude,
+// dispara contenidos y alertas, y guarda historial.
+// ============================================================
+async function drainPendientesConClaude(clave, subscriber_id, telefono, nombre) {
   if (!subscriber_id) return;
   const lockKey = "lock:" + clave;
   const drainId = "drain-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 
-  // Adquirir el lock principal para serializar con cualquier ejecucion activa.
-  // Si falla, esa ejecucion vera los pending en su paso 6 (ventana de acumulacion).
   const got = await redis.set(lockKey, drainId, { nx: true, ex: 30 });
   if (!got) {
     console.log("DRAIN cede lock (hay ejecucion activa):", clave);
@@ -571,15 +714,16 @@ async function drainPendientesConClaude(clave, subscriber_id, telefono) {
       await redis.del("pending:" + clave);
       return;
     }
-    // Apropiarse de los mensajes (otro drain/ciclo no debe volver a verlos)
-    await redis.del("pending:" + clave);
     console.log("DRAIN con Claude:", clave, msgs.length, "msg(s)");
 
-    // Releer historial: el ciclo principal lo escribio hace milisegundos
     const conv = await getConversacion(clave);
-    conv.push({ role: "user", content: msgs.join(" ") });
+    const mensajeCombinado = msgs.join(" ");
+    conv.push({ role: "user", content: mensajeCombinado });
+    // FIX #4: guardar historial ANTES de Claude para que el user msg quede
+    // preservado aunque Claude falle.
+    await setConversacion(clave, conv);
 
-    let respuestaLimpia = "";
+    let respuestaRaw = "";
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), 30000);
@@ -600,16 +744,8 @@ async function drainPendientesConClaude(clave, subscriber_id, telefono) {
       clearTimeout(tid);
       if (!resp.ok) throw new Error("Claude HTTP " + resp.status);
       const data = await resp.json();
-      const texto = (data.content && data.content[0] && data.content[0].text) || "";
-      respuestaLimpia = texto
-        .replace(/MAPA_DISPONIBILIDAD/g, "")
-        .replace(/PDF_ENCINO/g, "")
-        .replace(/ALERTA_[A-Z_]+:?[^\n]*/g, "")
-        .replace(/ETIQUETA:\S*/g, "")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-      if (!respuestaLimpia) throw new Error("respuesta vacia tras limpieza");
+      respuestaRaw = (data.content && data.content[0] && data.content[0].text) || "";
+      if (!respuestaRaw.trim()) throw new Error("respuesta vacía");
     } catch (e) {
       console.error("DRAIN Claude FALLO:", e.message);
       await mandarTelegram(
@@ -618,28 +754,58 @@ async function drainPendientesConClaude(clave, subscriber_id, telefono) {
         "Mensajes: " + msgs.join(" | ") + "\n" +
         "Error: " + e.message
       );
+      // FIX #17: NO borrar pending si Claude falló — dejar para retry o humano
       return;
     }
 
-    try {
-      await mandarTexto(subscriber_id, respuestaLimpia);
-      conv.push({ role: "assistant", content: respuestaLimpia });
-      await setConversacion(clave, conv);
-    } catch (e) {
-      console.error("DRAIN envio/save FALLO:", e.message);
-      await mandarTelegram(
-        "DRAIN no entregado al cliente\n" +
-        "Cliente: " + (telefono || subscriber_id) + "\n" +
-        "Error: " + e.message
-      );
+    // FIX #1, #2: procesar tokens completos (MAPA, PDF, ALERTAS)
+    const proc = await procesarRespuestaClaude(respuestaRaw, {
+      clave, subscriber_id, telefono, nombre, mensaje: mensajeCombinado
+    });
+
+    if (!proc.texto || proc.texto.length < 2) {
+      console.log("DRAIN: texto vacío tras limpieza | clave:", clave);
+      await redis.del("pending:" + clave);
+      return;
     }
+
+    // Enviar texto (con detección de fallo - FIX #12)
+    const okEnvio = await mandarTexto(subscriber_id, proc.texto, telefono);
+
+    if (!okEnvio) {
+      console.error("DRAIN: mandarTexto falló | clave:", clave);
+      // Ya se alertó dentro de mandarTexto. NO borrar pending — dejar para inspección manual.
+      return;
+    }
+
+    // Enviar mapa / PDF si aplica (FIX #1)
+    if (proc.enviarMapa) {
+      backgroundTask("drain-mapa", mandarContenido(subscriber_id, CONTENT_MAPA));
+    }
+    if (proc.enviarPDF) {
+      backgroundTask("drain-pdf", mandarContenido(subscriber_id, CONTENT_PDF));
+    }
+
+    // Guardar historial completo
+    let textoHistorial = proc.texto;
+    if (proc.enviarMapa) textoHistorial += "\n[Mapa de disponibilidad enviado al cliente]";
+    if (proc.enviarPDF) textoHistorial += "\n[PDF folleto enviado al cliente]";
+    conv.push({ role: "assistant", content: textoHistorial });
+    let convFinal = conv;
+    if (convFinal.length > 20) {
+      convFinal = convFinal.slice(-20);
+      if (convFinal[0].role === "assistant") convFinal = convFinal.slice(1);
+    }
+    await setConversacion(clave, convFinal);
+
+    // FIX #17: borrar pending solo al final, tras éxito completo
+    await redis.del("pending:" + clave);
+
   } finally {
-    // Liberar lock solo si sigue siendo nuestro
     try {
       const cur = await redis.get(lockKey);
       if (cur === drainId) await redis.del(lockKey);
     } catch (_) {}
-    // Cooldown post-respuesta para frenar retries inmediatos
     try {
       cooldownMemoria.set(clave, Date.now());
       await redis.setex("cooldown:" + clave, 5, "true");
@@ -648,7 +814,6 @@ async function drainPendientesConClaude(clave, subscriber_id, telefono) {
 }
 
 app.post("/webhook", async (req, res) => {
-  // FIX #3: Rechazar requests durante shutdown
   if (shuttingDown) {
     return res.status(503).json({ error: "Servidor reiniciando" });
   }
@@ -675,9 +840,7 @@ app.post("/webhook", async (req, res) => {
     console.log("=== WEBHOOK ===", "clave:", clave, "subscriber_id:", subscriber_id, "telefono:", telefono, "mensaje:", mensaje);
 
     // ============================================================
-    // FIX: cooldown ya NO descarta. Acumula como pending y agenda drenado tardio.
-    // Los retries de ManyChat traen mismo texto y los filtramos por includes(mensaje).
-    // El dedup por hash que viene despues sigue cubriendo cualquier retry que pase.
+    // COOLDOWN: acumula como pending y agenda drenado tardío
     // ============================================================
     const cooldownKey = "cooldown:" + clave;
     const ahoritaCooldown = cooldownMemoria.get(clave);
@@ -696,7 +859,6 @@ app.post("/webhook", async (req, res) => {
           if (!Array.isArray(arr)) arr = [];
         } catch { arr = []; }
       }
-      // Idempotencia frente a retries: mismo texto no se duplica
       if (!arr.includes(mensaje)) {
         arr.push(mensaje);
         await redis.setex(pendingKey, 60, JSON.stringify(arr));
@@ -704,11 +866,9 @@ app.post("/webhook", async (req, res) => {
         console.log("COOLDOWN: retry mismo texto, ya estaba en pending");
       }
 
-      // Agenda drenado tras expirar cooldown. Multiples drains agendados son seguros:
-      // solo el primero toma el lock; los demas salen.
       backgroundTask("late-drain-" + clave, (async () => {
         await new Promise(r => setTimeout(r, 5500));
-        await drainPendientesConClaude(clave, subscriber_id, telefono);
+        await drainPendientesConClaude(clave, subscriber_id, telefono, nombre);
       })());
 
       activeRequests.delete(requestId);
@@ -716,12 +876,13 @@ app.post("/webhook", async (req, res) => {
     }
 
     // ============================================================
-    // FIX: Dedup por contenido — si el mismo mensaje ya se procesó
-    // recientemente para este subscriber, ignorar (double tap)
+    // FIX #3: Dedup TTL reducido a 15s (era 90s).
+    // 15s sigue cubriendo retries de ManyChat pero ya no descarta
+    // repeticiones legítimas del cliente ("Si", "ok", "gracias").
     // ============================================================
     const msgHash = crypto.createHash("md5").update(clave + ":" + mensaje).digest("hex").slice(0, 12);
     dedupKey = "dedup:" + msgHash;
-    const dedupOk = await redis.set(dedupKey, "1", { nx: true, ex: 90 });
+    const dedupOk = await redis.set(dedupKey, "1", { nx: true, ex: 15 });
     if (!dedupOk) {
       console.log("BLOQUEADO (dedup mensaje):", clave, "mensaje ya procesado");
       activeRequests.delete(requestId);
@@ -734,12 +895,11 @@ app.post("/webhook", async (req, res) => {
     const lockKey = "lock:" + clave;
     const lockAcquired = await redis.set(lockKey, requestId, { nx: true, ex: 120 });
     if (!lockAcquired) {
-      // Guardar mensaje como pendiente en vez de tirarlo
       try {
         const pendingKey = "pending:" + clave;
         const pendingRaw = await redis.get(pendingKey);
         const pending = pendingRaw ? (typeof pendingRaw === "string" ? JSON.parse(pendingRaw) : pendingRaw) : [];
-        pending.push(mensaje);
+        if (!pending.includes(mensaje)) pending.push(mensaje);
         await redis.setex(pendingKey, 120, JSON.stringify(pending));
         console.log("MENSAJE GUARDADO COMO PENDIENTE:", clave, "total pendientes:", pending.length);
       } catch (e) {
@@ -749,7 +909,6 @@ app.post("/webhook", async (req, res) => {
       return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
     }
 
-    // Función para liberar el lock de forma segura
     async function releaseLock() {
       try {
         const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`;
@@ -759,25 +918,37 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // Helper: liberar lock + poner cooldown en todas las rutas de salida
-    async function releaseConCooldown() {
-      cooldownMemoria.set(clave, Date.now());
-      await redis.setex(cooldownKey, 5, "true");
+    // FIX #16: rutas de salida tempranas (congelado, fuera de horario)
+    // liberan el lock SIN cooldown. El cooldown solo aplica cuando el bot
+    // sí respondió y queremos evitar que el cliente nos sature.
+    async function releaseSinCooldown() {
       await releaseLock();
+    }
+
+    // FIX #18: cooldown se aplica DESPUÉS de res.json, no antes,
+    // así el reloj de 5s arranca cuando el cliente realmente ya tiene la respuesta.
+    async function aplicarCooldownPostJson() {
+      cooldownMemoria.set(clave, Date.now());
+      try { await redis.setex(cooldownKey, 5, "true"); } catch (_) {}
     }
 
     try {
       const congelado = await getBotCongelado(clave);
       if (congelado) {
         console.log("Bot congelado para:", clave);
-        await releaseConCooldown();
+        await releaseSinCooldown(); // FIX #16
         activeRequests.delete(requestId);
         return res.json({ respuesta1: null, respuesta2: null, alerta: "congelado", foto: false });
       }
 
-      const esDaniel = telefono === "5218123793904" || subscriber_id === "5218123793904";
+      // FIX #19: detección de Daniel via env vars (subscriber_id NO es teléfono)
+      const telLimpio = limpiarTelefono(telefono);
+      const esDaniel =
+        (telLimpio && telLimpio === limpiarTelefono(DANIEL_TELEFONO)) ||
+        (DANIEL_SUBSCRIBER_ID && subscriber_id && String(subscriber_id) === String(DANIEL_SUBSCRIBER_ID));
+
       if (!esDaniel && !dentroDeHorario()) {
-        await releaseConCooldown();
+        await releaseSinCooldown(); // FIX #16
         activeRequests.delete(requestId);
         return res.json({
           respuesta1: "Gracias por escribir, con gusto le atiendo mañana a primera hora.",
@@ -816,23 +987,26 @@ app.post("/webhook", async (req, res) => {
       }
 
       let conversacion = await getConversacion(clave);
-      
+
       if (!esNuevo && conversacion.length === 0) {
         console.log("BOT SILENCIADO: conversacion expirada para:", clave);
         backgroundTask("lead-volvio", mandarTelegram("LEAD VOLVIO A ESCRIBIR (bot silenciado)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot ya no responde. Escribele manualmente si quieres."));
-        await releaseConCooldown();
+        await releaseSinCooldown();
         activeRequests.delete(requestId);
         return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
       }
-      
+
       console.log("HISTORIAL:", clave, "esNuevo:", esNuevo, "mensajes:", conversacion.length);
 
       // ============================================================
-      // VENTANA DE ACUMULACION — esperar 3s para que si el cliente
-      // manda varios mensajes seguidos, se acumulen como pendientes
-      // y Claude los procese todos juntos en una sola respuesta
+      // FIX #11: Ventana de acumulación adaptativa.
+      // Si ya hay pending, esperamos poco (los mensajes burst ya están).
+      // Si no hay pending, esperamos 1.5s (era 3s) para no exceder timeouts.
       // ============================================================
-      await new Promise(r => setTimeout(r, 3000));
+      const pendingPreview = await redis.get("pending:" + clave);
+      const yaHayPending = !!pendingPreview;
+      const ventanaMs = yaHayPending ? 600 : 1500;
+      await new Promise(r => setTimeout(r, ventanaMs));
 
       let mensajesPendientes = [];
       try {
@@ -840,8 +1014,8 @@ app.post("/webhook", async (req, res) => {
         const pendingRaw = await redis.get(pendingKey);
         if (pendingRaw) {
           mensajesPendientes = typeof pendingRaw === "string" ? JSON.parse(pendingRaw) : pendingRaw;
-          await redis.del(pendingKey);
-          console.log("MENSAJES PENDIENTES RECUPERADOS:", clave, "cantidad:", mensajesPendientes.length);
+          // FIX #17: NO borrar pending aquí. Se borra solo tras éxito de Claude.
+          console.log("MENSAJES PENDIENTES LEÍDOS (sin borrar):", clave, "cantidad:", mensajesPendientes.length);
         }
       } catch (e) {
         console.error("Error leyendo pendientes:", e);
@@ -863,15 +1037,14 @@ app.post("/webhook", async (req, res) => {
           content: contexto + " " + mensajeCompleto
         });
       } else if (conversacion.length > 0) {
-        // Construir contexto enriquecido inspeccionando historial
         let contextoExtra = "";
-        
-        // BUG 3 FIX: Detectar qué activos ya se entregaron
+
+        // FIX #5: marcador correcto "[PDF folleto enviado al cliente]"
         const activosEntregados = [];
         for (const msg of conversacion) {
           if (msg.role === "assistant") {
-            if (msg.content.includes("[Mapa de disponibilidad enviado]") || msg.content.includes("$1,700,000") || /\$\s*1[.,]?7\d{2}[.,]?\d{3}/.test(msg.content)) activosEntregados.push("precios+mapa");
-            if (msg.content.includes("[PDF folleto enviado]")) activosEntregados.push("PDF folleto");
+            if (msg.content.includes("[Mapa de disponibilidad enviado al cliente]") || /\$\s*1[.,]?7\d{2}[.,]?\d{3}/.test(msg.content)) activosEntregados.push("precios+mapa");
+            if (msg.content.includes("[PDF folleto enviado al cliente]")) activosEntregados.push("PDF folleto");
             if (msg.content.includes("maps.app.goo.gl")) activosEntregados.push("ubicacion");
             if (msg.content.includes("Manejamos financiamiento") || msg.content.includes("mensualidades")) activosEntregados.push("financiamiento");
           }
@@ -879,16 +1052,20 @@ app.post("/webhook", async (req, res) => {
         if (activosEntregados.length > 0) {
           contextoExtra += " [Ya entregaste: " + [...new Set(activosEntregados)].join(", ") + ". NO repitas la pregunta de que le interesa. Avanza al siguiente paso del flujo.]";
         }
-        
-        // BUG 1 FIX: Detectar si el último mensaje del assistant fue la pregunta multi-opción
+
+        // FIX #15: afirmación inclusiva se evalúa sobre el mensaje ORIGINAL,
+        // no sobre mensajeCompleto (que ya tiene pendings concatenados).
         const ultimoAssistant = [...conversacion].reverse().find(m => m.role === "assistant");
         if (ultimoAssistant && /qu[eé] le interesa/i.test(ultimoAssistant.content)) {
           const afirmacionInclusiva = /^(s[ií]|todo|las\s*3|todos|ambos|los\s*tres|claro|dale|ok|va|s[ií]\s*(me\s+interesa|por\s+favor|claro|todo|las\s*3)|las\s*tres\s*cosas|s[ií]\s*,?\s*todo)[.,!?\s]*$/i;
-          if (afirmacionInclusiva.test(mensajeCompleto.trim())) {
+          // Evaluar contra cada mensaje (original + pendings) por separado
+          const candidatos = [mensaje, ...mensajesPendientes];
+          const algunoEsAfirmacion = candidatos.some(m => afirmacionInclusiva.test((m || "").trim()));
+          if (algunoEsAfirmacion) {
             contextoExtra += " [El cliente afirmo querer TODA la informacion ofrecida. Entrega ubicacion (link Google Maps) + MAPA_DISPONIBILIDAD con lista completa de precios + pregunta de plan de pagos. NO repitas la pregunta de que le interesa.]";
           }
         }
-        
+
         conversacion.push({
           role: "user",
           content: "[Conversacion en curso, mensaje #" + (Math.floor(conversacion.length / 2) + 1) + " del cliente. NO te presentes de nuevo.]" + contextoExtra + " " + mensajeCompleto
@@ -896,6 +1073,10 @@ app.post("/webhook", async (req, res) => {
       } else {
         conversacion.push({ role: "user", content: mensajeCompleto });
       }
+
+      // FIX #4, #13: guardar historial CON el user msg ANTES de Claude,
+      // para que aunque Claude falle, el mensaje del cliente quede preservado.
+      await setConversacion(clave, conversacion);
 
       // ============================================================
       // CLAUDE — timeout de 15s, 2 reintentos
@@ -927,18 +1108,24 @@ app.post("/webhook", async (req, res) => {
       }
       if (!claudeOk) {
         backgroundTask("claude-fallo-telegram", mandarTelegram("CLAUDE FALLO (API caida)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot le dijo 'Dame un momento'. Respondele manualmente."));
-        await releaseConCooldown();
+        // FIX #17: NO borramos pending — late-drain podrá reintentarlo después
+        // FIX #4: historial con user msg ya quedó guardado arriba
+        await releaseLock();
         activeRequests.delete(requestId);
-        return res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
+        res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
+        backgroundTask("cooldown-post", aplicarCooldownPostJson());
+        return;
       }
       if (data.content) { console.log("CLAUDE BLOQUES:", data.content.map(b => b.type).join(", "), "| clave:", clave); }
       const textBlocks = data.content ? data.content.filter(b => b.type === "text") : [];
       if (!textBlocks.length) {
         console.error("Error Claude (sin bloques):", JSON.stringify(data));
         backgroundTask("claude-sinbloques-telegram", mandarTelegram("CLAUDE FALLO (sin bloques)\nCliente: " + (telefono || subscriber_id) + "\nNombre: " + (nombre || "sin nombre") + "\nMensaje: " + mensaje + "\n\nEl bot le dijo 'Un momento'. Respondele manualmente."));
-        await releaseConCooldown();
+        await releaseLock();
         activeRequests.delete(requestId);
-        return res.json({ respuesta1: "Un momento, dejame verificarlo.", respuesta2: null, alerta: null, foto: false });
+        res.json({ respuesta1: "Un momento, dejame verificarlo.", respuesta2: null, alerta: null, foto: false });
+        backgroundTask("cooldown-post", aplicarCooldownPostJson());
+        return;
       }
 
       let respuesta = textBlocks.map(b => b.text).join("\n").trim();
@@ -946,30 +1133,31 @@ app.post("/webhook", async (req, res) => {
 
       // ============================================================
       // VALIDADOR POST-RESPUESTA
-      // Tipo A: "referencia info ausente" → REGENERAR (la info falta)
-      // Tipo B: "preguntas de cierre malas" → LIMPIAR (el resto está bien)
       // ============================================================
       const referenciaAusente = [
         /ya le (compart[ií]|envi[eé]|mand[eé]|puse|mencion[eé])/i,
         /como le (mencion[eé]|dije|coment[eé]|expliqu[eé])/i,
         /arriba le (puse|envi[eé]|compart[ií])/i,
       ];
+
+      // FIX #10: regex de preguntas malas anclados a fin-de-línea/fin-de-texto
+      // para no matar preguntas legítimas como "qué le gustaría saber sobre X".
       const preguntaMala = [
-        /cu[aá]l le llama la atenci[oó]n/i,
-        /cu[aá]l (prefiere|le gusta m[aá]s|le interesa m[aá]s)/i,
+        /cu[aá]l le llama la atenci[oó]n[^.!?\n]*[.?!]?$/im,
+        /cu[aá]l (prefiere|le gusta m[aá]s|le interesa m[aá]s)[^.!?\n]*[.?!]?$/im,
       ];
-      // BUG 3 FIX: En turno 2+, también prohibir repetir la pregunta de bienvenida
       if (conversacion.length > 2) {
-        preguntaMala.push(/qu[eé] le interesa (conocer )?m[aá]s/i);
-        preguntaMala.push(/qu[eé] (informaci[oó]n )?le (gustar[ií]a|interesa)/i);
-        preguntaMala.push(/qu[eé] le gustar[ií]a conocer/i);
+        // Solo matchea cuando es genérico ("qué le interesa más?", "qué información le gustaría?")
+        // pero NO cuando especifica un tema ("qué le gustaría saber del financiamiento?")
+        preguntaMala.push(/qu[eé] le interesa( conocer)?( m[aá]s)?\s*[?.!]?\s*$/im);
+        preguntaMala.push(/qu[eé] informaci[oó]n le (gustar[ií]a|interesa)\s*[?.!]?\s*$/im);
+        preguntaMala.push(/qu[eé] le (gustar[ií]a|interesa)\s+conocer\s*[?.!]?\s*$/im);
       }
 
       const refAusente = referenciaAusente.find(r => r.test(respuesta));
       if (refAusente) {
         console.log("VALIDADOR TIPO A: referencia info ausente, regenerando | clave:", clave);
         backgroundTask("validador-regen-telegram", mandarTelegram("VALIDADOR: Claude referenció info no enviada\nCliente: " + (telefono || subscriber_id) + "\nRespuesta original: " + respuesta.substring(0, 200)));
-        // Regenerar con feedback explícito
         try {
           const convRetry = [...conversacion, {
             role: "user",
@@ -994,150 +1182,63 @@ app.post("/webhook", async (req, res) => {
         } catch (retryErr) {
           console.error("Error regenerando respuesta:", retryErr.message);
         }
-        // Si sigue con referencia ausente, devolver null
+        // FIX #13: si la regeneración falla, el historial con user msg YA está guardado
+        // (lo guardamos antes de Claude). Solo respondemos con stalling.
         if (referenciaAusente.some(r => r.test(respuesta))) {
           console.log("VALIDADOR: regeneración falló | clave:", clave);
           backgroundTask("validador-falla-telegram", mandarTelegram("VALIDADOR fallback\nCliente: " + (telefono || subscriber_id) + "\nMensaje: " + mensaje));
-          await releaseConCooldown();
+          await releaseLock();
           activeRequests.delete(requestId);
-          return res.json({ respuesta1: "Permítame un momento, le confirmo enseguida.", respuesta2: null, alerta: null, foto: false });
+          res.json({ respuesta1: "Permítame un momento, le confirmo enseguida.", respuesta2: null, alerta: null, foto: false });
+          backgroundTask("cooldown-post", aplicarCooldownPostJson());
+          return;
         }
       }
 
-      // Tipo B: preguntas de cierre malas — solo limpiar
       const pregMala = preguntaMala.find(r => r.test(respuesta));
       if (pregMala) {
         console.log("VALIDADOR TIPO B: pregunta mala limpiada | clave:", clave);
-        respuesta = respuesta.replace(/cu[aá]l le llama la atenci[oó]n[^.!?\n]*/gi, "")
-          .replace(/cu[aá]l (prefiere|le gusta m[aá]s|le interesa m[aá]s)[^.!?\n]*/gi, "")
-          .replace(/qu[eé] le interesa (conocer )?m[aá]s[^.!?\n]*/gi, "")
-          .replace(/qu[eé] (informaci[oó]n )?le (gustar[ií]a|interesa)[^.!?\n]*/gi, "")
-          .replace(/qu[eé] le gustar[ií]a conocer[^.!?\n]*/gi, "")
-          .replace(/\n{2,}/g, "\n").trim();
+        respuesta = respuesta.replace(/cu[aá]l le llama la atenci[oó]n[^.!?\n]*[.?!]?/gi, "")
+          .replace(/cu[aá]l (prefiere|le gusta m[aá]s|le interesa m[aá]s)[^.!?\n]*[.?!]?/gi, "");
+        if (conversacion.length > 2) {
+          respuesta = respuesta
+            .replace(/qu[eé] le interesa( conocer)?( m[aá]s)?\s*[?.!]?\s*$/gim, "")
+            .replace(/qu[eé] informaci[oó]n le (gustar[ií]a|interesa)\s*[?.!]?\s*$/gim, "")
+            .replace(/qu[eé] le (gustar[ií]a|interesa)\s+conocer\s*[?.!]?\s*$/gim, "");
+        }
+        respuesta = respuesta.replace(/\n{2,}/g, "\n").trim();
       }
 
       // ============================================================
-      // BUG 2 FIX: Mover TODA la limpieza de tokens ANTES del validador
-      // de respuestas basura, para que la validación se haga sobre
-      // el texto limpio (sin MAPA_DISPONIBILIDAD, PDF_ENCINO, etc.)
+      // FIX #1, #2, #14, #20: procesar tokens via helper unificado
+      // (MAPA, PDF, ALERTAS — todos con sus side-effects).
       // ============================================================
-      let alerta = null;
-      let foto = false;
-      let enviarMapa = false;
-      let enviarPDF = false;
+      const proc = await procesarRespuestaClaude(respuesta, {
+        clave, subscriber_id, telefono, nombre, mensaje
+      });
+      respuesta = proc.texto;
+      const enviarMapa = proc.enviarMapa;
+      const enviarPDF = proc.enviarPDF;
+      const alerta = proc.alerta;
 
-      respuesta = respuesta.replace(/ETIQUETA:[a-zA-Z0-9_-]+/g, "").trim();
-
-      // BUG 2 FIX: Detectar y strippear MAPA_DISPONIBILIDAD + guard de precios
-      if (respuesta.includes("MAPA_DISPONIBILIDAD")) {
-        // Guard: si tiene MAPA_DISPONIBILIDAD pero NO tiene precios, inyectar bloque canónico
-        const tieneAlgunPrecio = /\$\s*1[.,]?7\d{2}[.,]?\d{3}/.test(respuesta);
-        if (!tieneAlgunPrecio) {
-          console.log("GUARD: MAPA_DISPONIBILIDAD sin precios, inyectando bloque canónico | clave:", clave);
-          respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
-          const bloquePreciosCanonicos = "Estos son los 2 lotes disponibles:\nLote 1 - 1,648 m2, ~$2,000,000~ hoy en *$1,700,000*\nLote 3B - 1,700 m2, ~$2,100,000~ hoy en *$1,785,000*\nContamos con financiamiento directo sin intereses.";
-          respuesta = respuesta ? respuesta + "\n" + bloquePreciosCanonicos : bloquePreciosCanonicos;
-        } else {
-          respuesta = respuesta.replace(/MAPA_DISPONIBILIDAD/g, "").trim();
-        }
-        if (subscriber_id) enviarMapa = true;
-      }
-
-      if (respuesta.includes("PDF_ENCINO")) {
-        respuesta = respuesta.replace(/PDF_ENCINO/g, "").trim();
-        if (subscriber_id) enviarPDF = true;
-      }
-
-      if (respuesta.includes("ALERTA_VISITA_PENDIENTE")) {
-        const match = respuesta.match(/ALERTA_VISITA_PENDIENTE:?\s*(.*)/);
-        alerta = "ALERTA_VISITA_PENDIENTE";
-        respuesta = respuesta.replace(/ALERTA_VISITA_PENDIENTE:?.*$/gm, "").trim();
-        const detalle = match ? match[1] : "";
-        backgroundTask("visita-telegram", mandarTelegram("VISITA PENDIENTE\nCliente: " + (telefono || subscriber_id) + "\nDetalle: " + detalle + "\nResponde TU para confirmar"));
-        backgroundTask("visita-save", guardarVisita(clave, detalle));
-        backgroundTask("visita-congelar", setBotCongelado(clave, true));
-        const schedKey = "capi_sched:" + clave;
-        const schedEnviado = await redis.get(schedKey);
-        if (!schedEnviado) {
-          await redis.setex(schedKey, 2592000, "true");
-          backgroundTask("visita-capi", mandarEventoViaManyChat("Schedule", telefono || null, null, subscriber_id, nombre));
-        }
-        if (subscriber_id) backgroundTask("visita-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
-
-      } else if (respuesta.includes("ALERTA_VISITA_CONFIRMADA")) {
-        const match = respuesta.match(/ALERTA_VISITA_CONFIRMADA:?\s*(.*)/);
-        alerta = "ALERTA_VISITA_CONFIRMADA";
-        respuesta = respuesta.replace(/ALERTA_VISITA_CONFIRMADA:?.*$/gm, "").trim();
-        backgroundTask("confirmada-telegram", mandarTelegram("VISITA CONFIRMADA\n" + (match ? match[1] : telefono)));
-        if (subscriber_id) backgroundTask("confirmada-etiqueta", ponerEtiqueta(subscriber_id, "cita privada encino"));
-
-      } else if (respuesta.includes("ALERTA_VISITA_OTRO_DIA")) {
-        const match = respuesta.match(/ALERTA_VISITA_OTRO_DIA:?\s*(.*)/);
-        alerta = "ALERTA_VISITA_OTRO_DIA";
-        respuesta = respuesta.replace(/ALERTA_VISITA_OTRO_DIA:?.*$/gm, "").trim();
-        backgroundTask("otroDia-telegram", mandarTelegram("Visita otro dia\nCliente: " + (telefono || subscriber_id) + "\nDia: " + (match ? match[1] : "")));
-
-      } else if (respuesta.includes("ALERTA_AUDIO")) {
-        alerta = "ALERTA_AUDIO";
-        respuesta = respuesta.replace(/ALERTA_AUDIO/g, "").trim();
-        backgroundTask("audio-congelar", setBotCongelado(clave, true));
-
-      } else if (respuesta.includes("ALERTA_LEGAL")) {
-        alerta = "ALERTA_LEGAL";
-        respuesta = respuesta.replace(/ALERTA_LEGAL/g, "").trim();
-
-      } else if (respuesta.includes("ALERTA_NO_SABE")) {
-        alerta = "ALERTA_NO_SABE";
-        respuesta = respuesta.replace(/ALERTA_NO_SABE/g, "").trim();
-        backgroundTask("noSabe-telegram", mandarTelegram("No sabe responder\nCliente: " + (telefono || subscriber_id) + "\nPregunta: " + mensaje));
-
-      } else if (respuesta.includes("ALERTA_PRESUPUESTO_OK")) {
-        alerta = "ALERTA_PRESUPUESTO_OK";
-        respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_OK/g, "").trim();
-        const crKey = "capi_cr:" + clave;
-        const crEnviado = await redis.get(crKey);
-        if (!crEnviado) {
-          await redis.setex(crKey, 2592000, "true");
-          backgroundTask("presupuesto-capi", mandarEventoViaManyChat("CompleteRegistration", telefono || null, null, subscriber_id, nombre));
-        }
-
-      } else if (respuesta.includes("ALERTA_PRESUPUESTO_BAJO")) {
-        alerta = "ALERTA_PRESUPUESTO_BAJO";
-        respuesta = respuesta.replace(/ALERTA_PRESUPUESTO_BAJO/g, "").trim();
-
-      } else if (respuesta.includes("ALERTA_SEGUIMIENTO")) {
-        const match = respuesta.match(/ALERTA_SEGUIMIENTO:?\s*(.*)/);
-        alerta = "ALERTA_SEGUIMIENTO";
-        respuesta = respuesta.replace(/ALERTA_SEGUIMIENTO:?.*$/gm, "").trim();
-        const detalle = match ? match[1] : "";
-        backgroundTask("seguimiento-telegram", mandarTelegram("SEGUIMIENTO\nCliente: " + (telefono || subscriber_id) + "\nPide contacto: " + detalle));
-
-      } else if (respuesta.includes("ALERTA_CIERRE_VENTA")) {
-        alerta = "ALERTA_CIERRE_VENTA";
-        respuesta = respuesta.replace(/ALERTA_CIERRE_VENTA/g, "").trim();
-        const purchKey = "capi_purch:" + clave;
-        const purchEnviado = await redis.get(purchKey);
-        if (!purchEnviado) {
-          await redis.setex(purchKey, 2592000, "true");
-          backgroundTask("cierre-capi", mandarEventoViaManyChat("Purchase", telefono || null, 1700000, subscriber_id, nombre));
-        }
-        backgroundTask("cierre-telegram", mandarTelegram("CIERRE DE VENTA\nCliente: " + (telefono || subscriber_id)));
-      }
-
-      if (respuesta.includes("ALERTA_PDF_ENVIADO")) {
-        respuesta = respuesta.replace(/ALERTA_PDF_ENVIADO/g, "").trim();
-      }
-
-      // BUG 2 FIX: Guard final de respuestas basura DESPUÉS de limpiar tokens
+      // FIX #9: validador de basura con whitelist de respuestas cortas legítimas
       const limpia = respuesta.trim();
+      const respuestasCortasOk = [
+        /^👍[\s\w.!?,]*$/u,
+        /^[\p{Extended_Pictographic}\s]+$/u,
+        /^(sale|claro|listo|perfecto|ok|va|enterado|entendido|de acuerdo|por supuesto|por su puesto|por supuesto que si|excelente|genial|gracias|con gusto)[\s.,!?👍]*$/i,
+      ];
+      const esCortaOk = respuestasCortasOk.some(r => r.test(limpia));
       const empiezaMal = /^[,;:.\s]|^(y |pero |son |está |los |las )/i.test(limpia);
-      const esSoloEmoji = /^[\p{Extended_Pictographic}\s]+$/u.test(limpia);
-      const muyCorta = !esSoloEmoji && limpia.length < 10;
+      const muyCorta = !esCortaOk && limpia.length < 10;
       if (empiezaMal || muyCorta || !limpia) {
-        console.log("VALIDADOR: respuesta basura detectada, devolviendo null | clave:", clave);
-        await releaseConCooldown();
+        console.log("VALIDADOR: respuesta basura detectada, devolviendo null | clave:", clave, "texto:", JSON.stringify(limpia));
+        // Historial con user msg ya guardado (FIX #4)
+        await releaseLock();
         activeRequests.delete(requestId);
-        return res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
+        res.json({ respuesta1: null, respuesta2: null, alerta: null, foto: false });
+        backgroundTask("cooldown-post", aplicarCooldownPostJson());
+        return;
       }
 
       if (conversacion.length >= 5) {
@@ -1153,14 +1254,10 @@ app.post("/webhook", async (req, res) => {
       const PREG_FINANC = "\u00bfLe gustar\u00eda conocer el plan de pagos? \uD83D\uDCB3";
       const PREG_PLAN   = "\u00bfSe le acomoda este plan?";
 
-      const partes = respuesta.split("---");
-      let respuesta1 = partes[0].trim();
-      let respuesta2 = partes.length > 1 ? partes.slice(1).join("\n").trim() : null;
-
       function sinPreguntas(txt, tipo) {
         return txt.split("\n").filter(function(l) {
           var ll = l.toLowerCase();
-          if (tipo === "financ") return ll.indexOf("le gustaria conocer") < 0 && ll.indexOf("le parece") < 0 && l.trim() !== "\uD83D\uDCB3";
+          if (tipo === "financ") return ll.indexOf("le gustaria conocer") < 0 && ll.indexOf("le gustar\u00eda conocer") < 0 && ll.indexOf("le parece") < 0 && l.trim() !== "\uD83D\uDCB3";
           return ll.indexOf("le parece") < 0 && ll.indexOf("se le acomoda") < 0;
         }).join("\n").trim();
       }
@@ -1172,40 +1269,75 @@ app.post("/webhook", async (req, res) => {
           .replace(/^\n+/, "").trim();
       }
 
-      // EXTRA FIX: Regex más laxo para detectar precios (cubre $1.700.000, $1,700,000 MXN, etc.)
+      // ============================================================
+      // FIX #6, #7, #8: lógica de partes que preserva TODO el contenido
+      // de Claude. Ya no se sobrescribe respuesta2 con la canónica si
+      // Claude escribió su propia pregunta de cierre.
+      // ============================================================
       const regexPrecio1 = /\$\s*1[.,]?7[0O]0[.,]?\d{3}/i;
       const regexPrecio2 = /\$\s*1[.,]?78[5S][.,]?\d{3}/i;
       const tienePrecios = regexPrecio1.test(respuesta) || regexPrecio2.test(respuesta);
+      const tieneFinanciamiento = respuesta.includes("Manejamos financiamiento") || /mensualidades\s+(de|desde)/i.test(respuesta);
+
+      const partes = respuesta.split("---").map(p => p.trim()).filter(p => p);
+
+      // ¿La última parte parece una pregunta corta de cierre escrita por Claude?
+      let bodyParts, closingDeClaude;
+      if (partes.length >= 2) {
+        const ultima = partes[partes.length - 1];
+        const lineasUltima = ultima.split("\n").length;
+        const esPreguntaCierre = /\?\s*[\p{Extended_Pictographic}]?\s*$/u.test(ultima) && ultima.length <= 120 && lineasUltima <= 2;
+        if (esPreguntaCierre) {
+          bodyParts = partes.slice(0, -1);
+          closingDeClaude = ultima;
+        } else {
+          bodyParts = partes;
+          closingDeClaude = null;
+        }
+      } else {
+        bodyParts = partes.length ? [partes[0]] : [respuesta];
+        closingDeClaude = null;
+      }
+
+      // Formatear el cuerpo si trae precios
+      let cuerpo = bodyParts.join("\n\n").trim();
       if (tienePrecios) {
-        const idxP = partes.findIndex(p => regexPrecio1.test(p) || regexPrecio2.test(p));
-        const idx  = idxP >= 0 ? idxP : 0;
-        if (idx === 0) {
-          respuesta1 = formatearPrecios(partes[0]);
-          respuesta2 = PREG_FINANC;
-        } else {
-          respuesta1 = partes.slice(0, idx).join("\n").trim() + "\n\n" + formatearPrecios(partes[idx]);
-          respuesta2 = PREG_FINANC;
-        }
-        console.log("PRECIOS OK r1:", respuesta1.length, "r2:", respuesta2);
+        cuerpo = formatearPrecios(cuerpo);
+      } else if (tieneFinanciamiento) {
+        cuerpo = sinPreguntas(cuerpo, "plan");
       }
 
-      const tieneFinanciamiento = !tienePrecios && (respuesta.includes("Manejamos financiamiento") || /mensualidades\s+(de|desde)/i.test(respuesta));
-      if (tieneFinanciamiento) {
-        const idxF   = partes.findIndex(p => p.includes("Manejamos financiamiento") || /mensualidades\s+(de|desde)/i.test(p));
-        const idxFin = idxF >= 0 ? idxF : 0;
-        if (idxFin === 0) {
-          respuesta1 = sinPreguntas(partes[0], "plan");
-          respuesta2 = PREG_PLAN;
-        } else {
-          respuesta1 = partes.slice(0, idxFin).join("\n").trim() + "\n\n" + sinPreguntas(partes[idxFin], "plan");
-          respuesta2 = PREG_PLAN;
-        }
-        console.log("FINANCIAMIENTO OK r1:", respuesta1.length, "r2:", respuesta2);
+      // Decidir respuesta1 y respuesta2 sin perder secciones intermedias
+      let respuesta1, respuesta2;
+
+      if (closingDeClaude) {
+        // FIX #7, #8: Claude escribió su propio cierre — lo respetamos
+        respuesta1 = cuerpo;
+        respuesta2 = closingDeClaude;
+      } else if (tienePrecios && tieneFinanciamiento) {
+        // FIX #6: ambos bloques presentes — el cierre natural es "se le acomoda"
+        respuesta1 = cuerpo;
+        respuesta2 = PREG_PLAN;
+      } else if (tienePrecios) {
+        respuesta1 = cuerpo;
+        respuesta2 = PREG_FINANC;
+      } else if (tieneFinanciamiento) {
+        respuesta1 = cuerpo;
+        respuesta2 = PREG_PLAN;
+      } else if (bodyParts.length === 1) {
+        respuesta1 = cuerpo;
+        respuesta2 = null;
+      } else {
+        // Múltiples partes sin precios ni financ ni cierre detectado:
+        // mantener la última como respuesta2 para que llegue como mensaje separado
+        respuesta1 = bodyParts.slice(0, -1).join("\n\n").trim();
+        respuesta2 = bodyParts[bodyParts.length - 1].trim();
       }
 
-      console.log("FINAL r1:", respuesta1 ? respuesta1.substring(0,50) : "VACIA", "| r2:", respuesta2 || "null");
+      console.log("FINAL r1:", respuesta1 ? respuesta1.substring(0,80) : "VACIA", "| r2:", respuesta2 || "null");
+      console.log("FLAGS: enviarMapa=" + enviarMapa, "enviarPDF=" + enviarPDF, "alerta=" + alerta);
 
-      // BUG 3 FIX: guardar en historial lo que REALMENTE se envió + marcar activos entregados
+      // Construir el texto que se guardará en historial
       let textoEnviado = (respuesta1 || "") + (respuesta2 ? "\n" + respuesta2 : "");
       if (enviarMapa) textoEnviado += "\n[Mapa de disponibilidad enviado al cliente]";
       if (enviarPDF) textoEnviado += "\n[PDF folleto enviado al cliente]";
@@ -1216,23 +1348,23 @@ app.post("/webhook", async (req, res) => {
       }
       await setConversacion(clave, conversacion);
 
-      // Fix #6 actualizado: drenar pendientes huerfanos PROCESANDO con Claude
-      // (no solo alerta a Telegram). El delay deja al ciclo principal liberar su
-      // lock via releaseConCooldown antes de que el drain intente tomarlo.
+      // FIX #17: éxito → AHORA SÍ borramos el pending que ya fue procesado
+      try { await redis.del("pending:" + clave); } catch (_) {}
+
+      // Drenar cualquier pending huérfano que pudiera haber llegado
+      // entre el read y la respuesta de Claude
       backgroundTask("pending-drain", (async () => {
         await new Promise(r => setTimeout(r, 300));
-        await drainPendientesConClaude(clave, subscriber_id, telefono);
+        await drainPendientesConClaude(clave, subscriber_id, telefono, nombre);
       })());
 
-      await releaseConCooldown();
+      // FIX #18: liberar lock, responder, y DESPUÉS aplicar cooldown
+      await releaseLock();
       activeRequests.delete(requestId);
-      
-      // BUG 2 FIX: Enviar res.json PRIMERO, luego mapa/PDF en background
-      // Esto evita que sendFlow de ManyChat bloquee/interrumpa la respuesta del webhook
+
       res.json({ respuesta1, respuesta2, alerta, foto: false });
-      
-      // Mapa y PDF se envían DESPUÉS del res.json para que ManyChat procese
-      // primero la respuesta del webhook y luego la inyección de contenido
+
+      // Mapa / PDF en background
       if (enviarMapa) {
         backgroundTask("mapa-envio", mandarContenido(subscriber_id, CONTENT_MAPA));
         console.log("MAPA programado en background para:", subscriber_id);
@@ -1241,20 +1373,25 @@ app.post("/webhook", async (req, res) => {
         backgroundTask("pdf-envio", mandarContenido(subscriber_id, CONTENT_PDF));
         console.log("PDF programado en background para:", subscriber_id);
       }
+
+      // FIX #18: cooldown post-respuesta
+      backgroundTask("cooldown-post", aplicarCooldownPostJson());
       return;
 
     } catch (error) {
       console.error("Error webhook procesamiento:", error);
       try {
-        cooldownMemoria.set(clave, Date.now());
-        await redis.setex(cooldownKey, 5, "true");
         if (dedupKey) await redis.del(dedupKey);
         const script = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`;
         await redis.eval(script, ["lock:" + clave], [requestId]);
       } catch (e) { /* ignore */ }
       activeRequests.delete(requestId);
       if (!res.headersSent) {
-        return res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
+        res.json({ respuesta1: "Claro, con gusto le atiendo. Dame un momento.", respuesta2: null, alerta: null, foto: false });
+        backgroundTask("cooldown-post-err", (async () => {
+          cooldownMemoria.set(clave, Date.now());
+          try { await redis.setex("cooldown:" + clave, 5, "true"); } catch (_) {}
+        })());
       }
     }
 
@@ -1320,19 +1457,17 @@ app.get("/limpiar", async (req, res) => {
     for (const c of seguimientos) await redis.del(c);
     const frios = await redis.keys("frio:*");
     for (const c of frios) await redis.del(c);
-    // FIX: Limpiar también los locks
     const locks = await redis.keys("lock:*");
     for (const c of locks) await redis.del(c);
     const pendientes = await redis.keys("pending:*");
     for (const c of pendientes) await redis.del(c);
-    // FIX: Limpiar keys de dedup de mensajes
     const dedups = await redis.keys("dedup:*");
     for (const c of dedups) await redis.del(c);
-    res.json({ 
-      status: "Todo limpiado", 
-      conversaciones: claves.length, 
+    res.json({
+      status: "Todo limpiado",
+      conversaciones: claves.length,
       leads: leads.length,
-      seguimientos: seguimientos.length 
+      seguimientos: seguimientos.length
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1438,12 +1573,12 @@ app.get("/estado/:clave", async (req, res) => {
     const congelado = await redis.get("congelado:" + clave);
     const seguimiento = await redis.get("seguimiento:" + clave);
     const visita = await redis.get("visita:" + clave);
-    
+
     let convParsed = null;
     if (conv) {
       convParsed = typeof conv === "string" ? JSON.parse(conv) : conv;
     }
-    
+
     res.json({
       clave,
       conversacion: convParsed ? { mensajes: convParsed.length, contenido: convParsed } : null,
@@ -1458,10 +1593,10 @@ app.get("/estado/:clave", async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.json({ status: "Agente Daniel - Privada Encino v3.8 funcionando" });
+  res.json({ status: "Agente Daniel - Privada Encino v3.9 funcionando" });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, function () {
-  console.log("Servidor Daniel v3.8 corriendo en puerto " + PORT);
+  console.log("Servidor Daniel v3.9 corriendo en puerto " + PORT);
 });

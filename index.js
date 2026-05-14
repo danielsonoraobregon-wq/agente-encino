@@ -362,52 +362,100 @@ async function mandarContenido(subscriberId, contentNs) {
 // MANDAR TEXTO — FIX #12: detectar fallos (24h WhatsApp expirada,
 // API caída) y alertar por Telegram para que un humano intervenga.
 // Devuelve true si entregó, false si falló (para que el caller sepa).
+//
+// FIX #21 (NUEVO): Reintento con backoff exponencial cuando ManyChat
+// devuelve error code 3011 (ventana de 24h aún no abierta por race
+// condition con Click-to-WhatsApp). Hasta 4 intentos con esperas de
+// 0s, 3s, 6s, 12s. Para CUALQUIER otro código de error: fallar
+// inmediato sin reintentar (no tiene sentido reintentar errores
+// permanentes como subscriber bloqueado).
 // ============================================================
 async function mandarTexto(subscriberId, texto, telefonoParaAlerta = null) {
-  try {
-    if (!subscriberId || !texto) {
-      console.error("mandarTexto: falta subscriberId o texto");
-      return false;
+  if (!subscriberId || !texto) {
+    console.error("mandarTexto: falta subscriberId o texto");
+    return false;
+  }
+
+  // Esperas ANTES de cada intento. Intento 1 sin espera; intentos 2/3/4
+  // con 3s/6s/12s de backoff exponencial. Solo aplica para code 3011.
+  const esperasMs = [0, 3000, 6000, 12000];
+  let ultimoData = null;
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= esperasMs.length; intento++) {
+    if (esperasMs[intento - 1] > 0) {
+      console.log("mandarTexto: esperando " + esperasMs[intento - 1] + "ms antes de intento " + intento + " (error 3011 previo)");
+      await new Promise(r => setTimeout(r, esperasMs[intento - 1]));
     }
-    const response = await fetchConTimeout("https://api.manychat.com/fb/sending/sendContent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + MANYCHAT_API_KEY },
-      body: JSON.stringify({
-        subscriber_id: subscriberId,
-        data: {
-          version: "v2",
-          content: {
-            messages: [{ type: "text", text: texto }]
+
+    try {
+      const response = await fetchConTimeout("https://api.manychat.com/fb/sending/sendContent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + MANYCHAT_API_KEY },
+        body: JSON.stringify({
+          subscriber_id: subscriberId,
+          data: {
+            version: "v2",
+            content: {
+              messages: [{ type: "text", text: texto }]
+            }
           }
+        })
+      }, 10000);
+      const data = await response.json();
+      console.log("MANYCHAT TEXTO intento " + intento + ":", data.status, "code:", data.code, "→", texto.substring(0, 60));
+
+      if (data.status === "success") {
+        if (intento > 1) {
+          console.log("mandarTexto: éxito en intento " + intento + " tras backoff (3011 race resuelto)");
         }
-      })
-    }, 10000);
-    const data = await response.json();
-    console.log("MANYCHAT TEXTO:", data.status, "→", texto.substring(0, 60));
-    if (data.status !== "success") {
-      console.error("MANYCHAT TEXTO ERROR:", JSON.stringify(data));
-      // FIX #12: alerta clara cuando no se pudo entregar (ventana 24h, etc.)
-      backgroundTask("texto-fallido-telegram", mandarTelegram(
-        "MENSAJE NO ENTREGADO (ManyChat API falló)\n" +
-        "Cliente: " + (telefonoParaAlerta || subscriberId) + "\n" +
-        "Posible causa: ventana de 24h cerrada, subscriber bloqueó, o API caída.\n" +
-        "Texto: " + texto.substring(0, 200) + "\n" +
-        "Status: " + (data.status || "desconocido") + "\n" +
-        "Error: " + (data.message || JSON.stringify(data).substring(0, 300))
-      ));
-      return false;
+        return true;
+      }
+
+      ultimoData = data;
+
+      // Solo el código 3011 (ventana 24h cerrada por race condition) merece reintento.
+      // Cualquier otro error es permanente (subscriber bloqueado, mal config, etc.) → cortar.
+      if (data.code !== 3011) {
+        console.error("MANYCHAT TEXTO ERROR no recuperable (code≠3011):", JSON.stringify(data));
+        break;
+      }
+
+      // code === 3011 → seguir al siguiente intento (si queda)
+      if (intento < esperasMs.length) {
+        console.log("MANYCHAT TEXTO error 3011 en intento " + intento + ", reintentando con backoff...");
+      } else {
+        console.error("MANYCHAT TEXTO error 3011 persistente tras todos los reintentos");
+      }
+    } catch (e) {
+      ultimoError = e;
+      console.error("Error mandarTexto intento " + intento + ":", e.message);
+      // Excepción de red no es 3011 → cortar
+      break;
     }
-    return true;
-  } catch (e) {
-    console.error("Error mandarTexto:", e.message);
+  }
+
+  // Llegamos aquí solo si fallaron todos los reintentos o hubo error no recuperable
+  if (ultimoError) {
     backgroundTask("texto-excepcion-telegram", mandarTelegram(
       "MENSAJE NO ENTREGADO (excepción)\n" +
       "Cliente: " + (telefonoParaAlerta || subscriberId) + "\n" +
       "Texto: " + texto.substring(0, 200) + "\n" +
-      "Error: " + e.message
+      "Error: " + ultimoError.message
     ));
-    return false;
+  } else {
+    const esCode3011 = ultimoData && ultimoData.code === 3011;
+    backgroundTask("texto-fallido-telegram", mandarTelegram(
+      "MENSAJE NO ENTREGADO" + (esCode3011 ? " (3011 persistente tras 4 reintentos)" : " (ManyChat API falló)") + "\n" +
+      "Cliente: " + (telefonoParaAlerta || subscriberId) + "\n" +
+      "Posible causa: " + (esCode3011 ? "ventana 24h nunca se abrió (problema serio)" : "subscriber bloqueó, API caída, o config inválida") + ".\n" +
+      "Texto: " + texto.substring(0, 200) + "\n" +
+      "Status: " + ((ultimoData && ultimoData.status) || "desconocido") + "\n" +
+      "Code: " + ((ultimoData && ultimoData.code) || "desconocido") + "\n" +
+      "Error: " + ((ultimoData && ultimoData.message) || JSON.stringify(ultimoData).substring(0, 300))
+    ));
   }
+  return false;
 }
 
 const EVENTO_A_ETIQUETA = {
@@ -692,6 +740,11 @@ async function procesarRespuestaClaude(respuesta, ctx) {
 // FIX #1, #2: drainPendientesConClaude — ahora procesa tokens
 // completos (MAPA, PDF, ALERTAS) usando procesarRespuestaClaude,
 // dispara contenidos y alertas, y guarda historial.
+//
+// FIX #22 (NUEVO): si mandarTexto devuelve false (entrega fallida),
+// revertir el historial removiendo el user msg que metimos antes de
+// Claude. Si no entregamos respuesta, "no aprendimos nada" y el
+// siguiente turno del cliente debe procesarse desde cero.
 // ============================================================
 async function drainPendientesConClaude(clave, subscriber_id, telefono, nombre) {
   if (!subscriber_id) return;
@@ -769,11 +822,20 @@ async function drainPendientesConClaude(clave, subscriber_id, telefono, nombre) 
       return;
     }
 
-    // Enviar texto (con detección de fallo - FIX #12)
+    // Enviar texto (con detección de fallo - FIX #12 + reintento 3011 - FIX #21)
     const okEnvio = await mandarTexto(subscriber_id, proc.texto, telefono);
 
     if (!okEnvio) {
       console.error("DRAIN: mandarTexto falló | clave:", clave);
+      // FIX #22: revertir historial — removemos el user msg que metimos antes de Claude.
+      // Si no entregamos respuesta, el bot "no aprendió nada" y el siguiente turno
+      // del cliente debe procesarse desde el estado anterior, no con un user msg
+      // huérfano sin respuesta del assistant.
+      if (conv.length > 0 && conv[conv.length - 1].role === "user") {
+        conv.pop();
+        await setConversacion(clave, conv);
+        console.log("DRAIN: historial revertido tras fallo de envío | clave:", clave, "| nueva longitud:", conv.length);
+      }
       // Ya se alertó dentro de mandarTexto. NO borrar pending — dejar para inspección manual.
       return;
     }
@@ -970,6 +1032,16 @@ app.post("/webhook", async (req, res) => {
           await mandarContenido(subscriber_id, CONTENT_VIDEOS);
           backgroundTask("etiqueta", ponerEtiqueta(subscriber_id, "conversacion privada encino"));
           console.log("VIDEOS enviados + etiqueta en background para:", clave);
+
+          // ============================================================
+          // FIX #23 (NUEVO): Delay defensivo de 3.5s para Click-to-WhatsApp.
+          // Cuando un lead llega por anuncio CTWA, ManyChat necesita tiempo
+          // para procesar la apertura de la ventana de 24h del subscriber.
+          // Si Claude responde inmediatamente, mandarTexto puede toparse
+          // con error 3011 (ventana aún no abierta). Esperando 3.5s aquí,
+          // damos margen a ManyChat. Solo aplica para leads nuevos.
+          // ============================================================
+          await new Promise(r => setTimeout(r, 3500));
         } else {
           console.error("NO SE MANDARON VIDEOS: subscriber_id es null para clave:", clave);
         }
@@ -1593,10 +1665,10 @@ app.get("/estado/:clave", async (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  res.json({ status: "Agente Daniel - Privada Encino v3.9 funcionando" });
+  res.json({ status: "Agente Daniel - Privada Encino v4.0 funcionando" });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, function () {
-  console.log("Servidor Daniel v3.9 corriendo en puerto " + PORT);
+  console.log("Servidor Daniel v4.0 corriendo en puerto " + PORT);
 });
